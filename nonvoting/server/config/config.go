@@ -194,7 +194,7 @@ func (n *Node) validate(isProvider bool) error {
 			return fmt.Errorf("config: %v: Node is missing Identifier", section)
 		}
 		var err error
-		n.Identifier, err = idna.Lookup.ToASCII(n.Identifier)
+		n.Identifier, err = idna.ToASCII(n.Identifier)
 		if err != nil {
 			return fmt.Errorf("config: Failed to normalize Identifier: %v", err)
 		}
