@@ -137,10 +137,12 @@ func (s *state) onWakeup() {
 	}
 
 	// If it is past the descriptor upload period and we have yet to generate a
-	// document for the *next* epoch, generate one.
+	// document for the *next* epoch, generate a document and send it to all
+	// of the other Directory Authorities.
 	if till < publishDeadline && s.documents[epoch+1] == nil {
 		if m, ok := s.descriptors[epoch+1]; ok && s.hasEnoughDescriptors(m) {
 			s.generateDocument(epoch + 1)
+			s.sendVoteToAuthorities(epoch + 1)
 		}
 	}
 
@@ -165,6 +167,16 @@ func (s *state) hasEnoughDescriptors(m map[[eddsa.PublicKeySize]byte]*descriptor
 
 	minNodes := s.s.cfg.Debug.Layers * s.s.cfg.Debug.MinNodesPerLayer
 	return nrProviders > 0 && nrNodes >= minNodes
+}
+
+// sendVoteToAuthorities sends s.descriptors[epoch] to
+// all Directory Authorities
+func (s *state) sendVoteToAuthorities(epoch uint64) {
+	// Lock is held (called from the onWakeup hook).
+
+	s.log.Noticef("Sending Document for epoch %v, to all Directory Authorities.", epoch)
+
+	// XXX FIX ME
 }
 
 func (s *state) generateDocument(epoch uint64) {
