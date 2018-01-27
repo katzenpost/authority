@@ -20,7 +20,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/katzenpost/authority/nonvoting/internal/s11n"
+	"github.com/katzenpost/authority/voting/internal/s11n"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/epochtime"
@@ -75,6 +75,10 @@ func (s *Server) onConn(conn net.Conn) {
 	// Parse the command, and craft the response.
 	var resp commands.Command
 	switch c := cmd.(type) {
+	case *commands.Vote:
+		s.onVote(c)
+	case *commands.VoteStatus:
+		s.onVoteStatus(c)
 	case *commands.GetConsensus:
 		resp = s.onGetConsensus(rAddr, c)
 	case *commands.PostDescriptor:
@@ -97,6 +101,18 @@ func (s *Server) onConn(conn net.Conn) {
 		if err = wireConn.SendCommand(resp); err != nil {
 			s.log.Debugf("Peer %v: Failed to send response: %v", rAddr, err)
 		}
+	}
+}
+
+func (s *Server) onVote(cmd *commands.Vote) {
+	if err := s.state.onVoteUpload(cmd); err != nil {
+		s.log.Debugf("onVote failure: %s", err)
+	}
+}
+
+func (s *Server) onVoteStatus(cmd *commands.VoteStatus) {
+	if err := s.state.onVoteStatus(cmd); err != nil {
+		s.log.Debugf("onVoteStatus failure: %s", err)
 	}
 }
 

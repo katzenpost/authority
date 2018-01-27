@@ -26,12 +26,13 @@ import (
 	"time"
 
 	bolt "github.com/coreos/bbolt"
-	"github.com/katzenpost/authority/nonvoting/internal/s11n"
+	"github.com/katzenpost/authority/voting/internal/s11n"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/epochtime"
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/core/wire/commands"
 	"github.com/katzenpost/core/worker"
 	"gopkg.in/op/go-logging.v1"
 )
@@ -381,6 +382,16 @@ func (s *state) isDescriptorAuthorized(desc *pki.MixDescriptor) bool {
 	default:
 		return false
 	}
+}
+
+func (s *state) onVoteUpload(vote *commands.Vote) error {
+	// XXX FIX ME
+	return nil
+}
+
+func (s *state) onVoteStatus(voteStatus *commands.VoteStatus) error {
+	// XXX FIX ME
+	return nil
 }
 
 func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoch uint64) error {
