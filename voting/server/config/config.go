@@ -187,6 +187,28 @@ func (dCfg *Debug) applyDefaults() {
 	}
 }
 
+// AuthorityPeer is the connecting information
+// and identity key for the Authority peers
+type AuthorityPeer struct {
+	// IdentityKey is the Authority's identity signing key.
+	IdentityKey *eddsa.PublicKey
+	// Addresses are the IP address/port combinations that the peer authority
+	// uses for the Directory Authority service.
+	Addresses []string
+}
+
+func (a *AuthorityPeer) validate() error {
+	for _, v := range a.Addresses {
+		if err := utils.EnsureAddrIPPort(v); err != nil {
+			return fmt.Errorf("config: AuthorityPeer: Address '%v' is invalid: %v", v, err)
+		}
+	}
+	if a.IdentityKey == nil {
+		return fmt.Errorf("config: %v: AuthorityPeer is missing Identifier")
+	}
+	return nil
+}
+
 // Node is an authority mix node or provider entry.
 type Node struct {
 	// Identifier is the human readable node identifier, to be set iff
@@ -225,8 +247,9 @@ type Config struct {
 	Parameters *Parameters
 	Debug      *Debug
 
-	Mixes     []*Node
-	Providers []*Node
+	Authorities []*AuthorityPeer
+	Mixes       []*Node
+	Providers   []*Node
 }
 
 // FixupAndValidate applies defaults to config entries and validates the
@@ -262,6 +285,22 @@ func (cfg *Config) FixupAndValidate() error {
 	}
 	cfg.Parameters.applyDefaults()
 	cfg.Debug.applyDefaults()
+
+	allPeers := make([]*AuthorityPeer, 0, len(cfg.Authorities))
+	for _, v := range cfg.Authorities {
+		if err := v.validate(); err != nil {
+			return err
+		}
+	}
+	authMap := make(map[[eddsa.PublicKeySize]byte]*AuthorityPeer)
+	for _, v := range allPeers {
+		var tmp [eddsa.PublicKeySize]byte
+		copy(tmp[:], v.IdentityKey.Bytes())
+		if _, ok := authMap[tmp]; ok {
+			return fmt.Errorf("config: Nodes: IdentityKey '%v' is present more than once", v.IdentityKey)
+		}
+		authMap[tmp] = v
+	}
 
 	allNodes := make([]*Node, 0, len(cfg.Mixes)+len(cfg.Providers))
 	for _, v := range cfg.Mixes {
