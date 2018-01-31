@@ -26,6 +26,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/utils"
@@ -190,8 +191,10 @@ func (dCfg *Debug) applyDefaults() {
 // AuthorityPeer is the connecting information
 // and identity key for the Authority peers
 type AuthorityPeer struct {
-	// IdentityKey is the Authority's identity signing key.
-	IdentityKey *eddsa.PublicKey
+	// IdentityPublicKey is the peer's identity signing key.
+	IdentityPublicKey *eddsa.PublicKey
+	// LinkPublicKey is the peer's public link layer key.
+	LinkPublicKey *ecdh.PublicKey
 	// Addresses are the IP address/port combinations that the peer authority
 	// uses for the Directory Authority service.
 	Addresses []string
@@ -203,7 +206,7 @@ func (a *AuthorityPeer) validate() error {
 			return fmt.Errorf("config: AuthorityPeer: Address '%v' is invalid: %v", v, err)
 		}
 	}
-	if a.IdentityKey == nil {
+	if a.IdentityPublicKey == nil {
 		return fmt.Errorf("config: %v: AuthorityPeer is missing Identifier")
 	}
 	return nil
@@ -293,13 +296,19 @@ func (cfg *Config) FixupAndValidate() error {
 		}
 	}
 	authMap := make(map[[eddsa.PublicKeySize]byte]*AuthorityPeer)
+	linkMap := make(map[[eddsa.PublicKeySize]byte]*AuthorityPeer)
 	for _, v := range allPeers {
 		var tmp [eddsa.PublicKeySize]byte
-		copy(tmp[:], v.IdentityKey.Bytes())
+		copy(tmp[:], v.IdentityPublicKey.Bytes())
 		if _, ok := authMap[tmp]; ok {
-			return fmt.Errorf("config: Nodes: IdentityKey '%v' is present more than once", v.IdentityKey)
+			return fmt.Errorf("config: Nodes: IdentityKey '%v' is present more than once", v.IdentityPublicKey)
 		}
 		authMap[tmp] = v
+		copy(tmp[:], v.LinkPublicKey.Bytes())
+		if _, ok := linkMap[tmp]; ok {
+			return fmt.Errorf("config: Nodes: IdentityKey '%v' is present more than once", v.IdentityPublicKey)
+		}
+		linkMap[tmp] = v
 	}
 
 	allNodes := make([]*Node, 0, len(cfg.Mixes)+len(cfg.Providers))
