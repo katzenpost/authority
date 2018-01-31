@@ -27,11 +27,13 @@ import (
 
 	bolt "github.com/coreos/bbolt"
 	"github.com/katzenpost/authority/voting/internal/s11n"
+	"github.com/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/epochtime"
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/wire/commands"
 	"github.com/katzenpost/core/worker"
 	"gopkg.in/op/go-logging.v1"
@@ -66,8 +68,9 @@ type state struct {
 
 	db *bolt.DB
 
-	authorizedMixes     map[[eddsa.PublicKeySize]byte]bool
-	authorizedProviders map[[eddsa.PublicKeySize]byte]string
+	authorizedMixes       map[[eddsa.PublicKeySize]byte]bool
+	authorizedProviders   map[[eddsa.PublicKeySize]byte]string
+	authorizedAuthorities map[[eddsa.PublicKeySize]byte]bool
 
 	documents   map[uint64]*document
 	descriptors map[uint64]map[[eddsa.PublicKeySize]byte]*descriptor
@@ -170,6 +173,62 @@ func (s *state) hasEnoughDescriptors(m map[[eddsa.PublicKeySize]byte]*descriptor
 	return nrProviders > 0 && nrNodes >= minNodes
 }
 
+func (s *state) sendVoteToPeer(peer *config.AuthorityPeer, epoch uint64) error {
+	cfg := &wire.SessionConfig{
+		Authenticator:     s,
+		AdditionalData:    []byte(""),
+		AuthenticationKey: s.s.cfg.Debug.LinkKey,
+		RandomReader:      rand.Reader,
+	}
+	session, err := wire.NewSession(cfg, true)
+	if err != nil {
+		return err
+	}
+	cmd := &commands.Vote{
+		Epoch:          epoch,
+		PublicKey:      s.s.cfg.Debug.IdentityKey.PublicKey(),
+		AdditionalData: []byte(""), // XXX
+		Payload:        s.documents[epoch].raw,
+	}
+	err = session.SendCommand(cmd)
+	if err != nil {
+		return err
+	}
+	resp, err := session.RecvCommand()
+	if err != nil {
+		return err
+	}
+	r, ok := resp.(*commands.VoteStatus)
+	if !ok {
+		return fmt.Errorf("Vote response resulted in unexpected reply: %T", resp)
+	}
+	switch r.ErrorCode {
+	case commands.VoteOk:
+		return nil
+	case commands.VoteTooLate:
+		return errors.New("Vote was too late.")
+	case commands.VoteTooEarly:
+		return errors.New("Vote was too early.")
+	default:
+		return fmt.Errorf("Vote rejected by authority: unknown error code received.")
+	}
+
+	return nil
+}
+
+// IsPeerValid authenticates the remote peer's credentials
+// for our link layer wire protocol as specified by
+// the PeerAuthenticator interface in core/wire/session.go
+func (s *state) IsPeerValid(creds *wire.PeerCredentials) bool {
+	var ad [eddsa.PublicKeySize]byte
+	copy(ad[:], creds.AdditionalData)
+	_, ok := s.authorizedAuthorities[ad]
+	if ok {
+		return true
+	}
+	return false
+}
+
 // sendVoteToAuthorities sends s.descriptors[epoch] to
 // all Directory Authorities
 func (s *state) sendVoteToAuthorities(epoch uint64) {
@@ -177,7 +236,14 @@ func (s *state) sendVoteToAuthorities(epoch uint64) {
 
 	s.log.Noticef("Sending Document for epoch %v, to all Directory Authorities.", epoch)
 
-	// XXX FIX ME
+	// XXX
+	for _, peer := range s.s.cfg.Authorities {
+		err := s.sendVoteToPeer(peer, epoch)
+		if err != nil {
+			s.log.Error("failed to send vote to peer %v", peer)
+		}
+	}
+
 }
 
 func (s *state) generateDocument(epoch uint64) {
@@ -614,6 +680,11 @@ func newState(s *Server) (*state, error) {
 	for _, v := range st.s.cfg.Providers {
 		pk := v.IdentityKey.ByteArray()
 		st.authorizedProviders[pk] = v.Identifier
+	}
+	st.authorizedAuthorities = make(map[[eddsa.PublicKeySize]byte]bool)
+	for _, v := range st.s.cfg.Authorities {
+		pk := v.IdentityPublicKey.ByteArray()
+		st.authorizedMixes[pk] = true
 	}
 
 	st.documents = make(map[uint64]*document)

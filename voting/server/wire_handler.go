@@ -220,7 +220,7 @@ func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 		return false
 	}
 
-	linkPk := a.peerIdentityKey.ToECDH()
+	linkPk := a.s.cfg.Debug.LinkKey.PublicKey()
 	if !linkPk.Equal(creds.PublicKey) {
 		a.s.log.Debugf("Rejecting authentication, public key mismatch.")
 		return false
