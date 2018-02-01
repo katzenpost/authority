@@ -185,10 +185,9 @@ func (s *state) sendVoteToPeer(peer *config.AuthorityPeer, epoch uint64) error {
 		return err
 	}
 	cmd := &commands.Vote{
-		Epoch:          epoch,
-		PublicKey:      s.s.cfg.Debug.IdentityKey.PublicKey(),
-		AdditionalData: []byte(""), // XXX
-		Payload:        s.documents[epoch].raw,
+		Epoch:     epoch,
+		PublicKey: s.s.cfg.Debug.IdentityKey.PublicKey(),
+		Payload:   s.documents[epoch].raw,
 	}
 	err = session.SendCommand(cmd)
 	if err != nil {
@@ -198,6 +197,7 @@ func (s *state) sendVoteToPeer(peer *config.AuthorityPeer, epoch uint64) error {
 	if err != nil {
 		return err
 	}
+	session.Close()
 	r, ok := resp.(*commands.VoteStatus)
 	if !ok {
 		return fmt.Errorf("Vote response resulted in unexpected reply: %T", resp)
@@ -212,7 +212,6 @@ func (s *state) sendVoteToPeer(peer *config.AuthorityPeer, epoch uint64) error {
 	default:
 		return fmt.Errorf("Vote rejected by authority: unknown error code received.")
 	}
-
 	return nil
 }
 
