@@ -137,6 +137,7 @@ func (s *state) onWakeup() {
 		nrBootstrapDescs := len(s.authorizedMixes) + len(s.authorizedProviders)
 		if m, ok := s.descriptors[epoch]; ok && len(m) == nrBootstrapDescs {
 			s.generateDocument(epoch)
+			s.sendVoteToAuthorities(epoch)
 		}
 	}
 
@@ -184,6 +185,7 @@ func (s *state) sendVoteToPeer(peer *config.AuthorityPeer, epoch uint64) error {
 	if err != nil {
 		return err
 	}
+	defer session.Close()
 	cmd := &commands.Vote{
 		Epoch:     epoch,
 		PublicKey: s.s.cfg.Debug.IdentityKey.PublicKey(),
@@ -197,7 +199,6 @@ func (s *state) sendVoteToPeer(peer *config.AuthorityPeer, epoch uint64) error {
 	if err != nil {
 		return err
 	}
-	session.Close()
 	r, ok := resp.(*commands.VoteStatus)
 	if !ok {
 		return fmt.Errorf("Vote response resulted in unexpected reply: %T", resp)
@@ -235,14 +236,12 @@ func (s *state) sendVoteToAuthorities(epoch uint64) {
 
 	s.log.Noticef("Sending Document for epoch %v, to all Directory Authorities.", epoch)
 
-	// XXX
 	for _, peer := range s.s.cfg.Authorities {
 		err := s.sendVoteToPeer(peer, epoch)
 		if err != nil {
 			s.log.Error("failed to send vote to peer %v", peer)
 		}
 	}
-
 }
 
 func (s *state) generateDocument(epoch uint64) {
