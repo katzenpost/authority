@@ -451,6 +451,9 @@ func (s *state) isDescriptorAuthorized(desc *pki.MixDescriptor) bool {
 }
 
 func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
+	s.Lock()
+	defer s.Unlock()
+
 	if vote.Epoch < s.votingEpoch {
 		s.log.Errorf("Received Vote too early: %d < %d", vote.Epoch, s.votingEpoch)
 		resp := &commands.VoteStatus{
