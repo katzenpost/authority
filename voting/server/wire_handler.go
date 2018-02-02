@@ -76,9 +76,10 @@ func (s *Server) onConn(conn net.Conn) {
 	var resp commands.Command
 	switch c := cmd.(type) {
 	case *commands.Vote:
-		s.onVote(c)
+		resp = s.onVote(c)
 	case *commands.VoteStatus:
-		s.onVoteStatus(c)
+		s.log.Error("VoteStatus command is not allowed on Authority wire service listener.")
+		return
 	case *commands.GetConsensus:
 		resp = s.onGetConsensus(rAddr, c)
 	case *commands.PostDescriptor:
@@ -104,16 +105,8 @@ func (s *Server) onConn(conn net.Conn) {
 	}
 }
 
-func (s *Server) onVote(cmd *commands.Vote) {
-	if err := s.state.onVoteUpload(cmd); err != nil {
-		s.log.Debugf("onVote failure: %s", err)
-	}
-}
-
-func (s *Server) onVoteStatus(cmd *commands.VoteStatus) {
-	if err := s.state.onVoteStatus(cmd); err != nil {
-		s.log.Debugf("onVoteStatus failure: %s", err)
-	}
+func (s *Server) onVote(cmd *commands.Vote) commands.Command {
+	return s.state.onVoteUpload(cmd)
 }
 
 func (s *Server) onGetConsensus(rAddr net.Addr, cmd *commands.GetConsensus) commands.Command {

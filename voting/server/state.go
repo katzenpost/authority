@@ -77,6 +77,8 @@ type state struct {
 
 	updateCh       chan interface{}
 	bootstrapEpoch uint64
+
+	votingEpoch uint64
 }
 
 func (s *state) Halt() {
@@ -448,14 +450,42 @@ func (s *state) isDescriptorAuthorized(desc *pki.MixDescriptor) bool {
 	}
 }
 
-func (s *state) onVoteUpload(vote *commands.Vote) error {
-	// XXX FIX ME
-	return nil
-}
-
-func (s *state) onVoteStatus(voteStatus *commands.VoteStatus) error {
-	// XXX FIX ME
-	return nil
+func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
+	if vote.Epoch < s.votingEpoch {
+		s.log.Errorf("Received Vote too early: %d < %d", vote.Epoch, s.votingEpoch)
+		resp := &commands.VoteStatus{
+			ErrorCode: commands.VoteTooEarly,
+		}
+		return resp
+	}
+	if vote.Epoch > s.votingEpoch {
+		s.log.Errorf("Received Vote too late: %d > %d", vote.Epoch, s.votingEpoch)
+		resp := &commands.VoteStatus{
+			ErrorCode: commands.VoteTooLate,
+		}
+		return resp
+	}
+	_, ok := s.authorizedAuthorities[vote.PublicKey.ByteArray()]
+	if !ok {
+		s.log.Error("Voter not white-listed.")
+		resp := &commands.VoteStatus{
+			ErrorCode: commands.VoteNotAuthorized,
+		}
+		return resp
+	}
+	_, err := s11n.VerifyAndParseDocument(vote.Payload, vote.PublicKey)
+	if err != nil {
+		s.log.Error("Vote failed signature verification.")
+		resp := &commands.VoteStatus{
+			ErrorCode: commands.VoteNotSigned,
+		}
+		return resp
+	}
+	s.log.Debug("Vote OK.")
+	resp := &commands.VoteStatus{
+		ErrorCode: commands.VoteOk,
+	}
+	return resp
 }
 
 func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoch uint64) error {
