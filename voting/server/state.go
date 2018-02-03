@@ -78,7 +78,8 @@ type state struct {
 	updateCh       chan interface{}
 	bootstrapEpoch uint64
 
-	votingEpoch uint64
+	votingEpoch  uint64
+	votingRawDoc []byte
 }
 
 func (s *state) Halt() {
@@ -290,7 +291,7 @@ func (s *state) generateDocument(epoch uint64) {
 	}
 
 	// Ensure the document is sane.
-	pDoc, err := s11n.VerifyAndParseDocument([]byte(signed), s.s.identityKey.PublicKey())
+	pDoc, _, err := s11n.VerifyAndParseDocument([]byte(signed), s.s.identityKey.PublicKey())
 	if err != nil {
 		// This should basically always succeed.
 		s.log.Errorf("Signed document failed validation: %v", err)
@@ -476,13 +477,20 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 		}
 		return resp
 	}
-	_, err := s11n.VerifyAndParseDocument(vote.Payload, vote.PublicKey)
+	_, rawDoc, err := s11n.VerifyAndParseDocument(vote.Payload, vote.PublicKey)
 	if err != nil {
 		s.log.Error("Vote failed signature verification.")
 		resp := &commands.VoteStatus{
 			ErrorCode: commands.VoteNotSigned,
 		}
 		return resp
+	}
+	if bytes.Equal(rawDoc, s.votingRawDoc) {
+		// XXX
+	}
+	_, err = s11n.GetSignatures(vote.Payload) // XXX
+	if err != nil {
+		// XXX
 	}
 	s.log.Debug("Vote OK.")
 	resp := &commands.VoteStatus{
@@ -628,7 +636,7 @@ func (s *state) restorePersistence() error {
 			for _, epoch := range epochs {
 				k := epochToBytes(epoch)
 				if rawDoc := docsBkt.Get(k); rawDoc != nil {
-					if doc, err := s11n.VerifyAndParseDocument(rawDoc, s.s.identityKey.PublicKey()); err != nil {
+					if doc, _, err := s11n.VerifyAndParseDocument(rawDoc, s.s.identityKey.PublicKey()); err != nil {
 						// This continues because there's no reason not to load
 						// the descriptors as long as they validate, even if
 						// the document fails to load.

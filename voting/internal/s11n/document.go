@@ -83,40 +83,48 @@ func SignDocument(signingKey *eddsa.PrivateKey, d *Document) (string, error) {
 	return signed.CompactSerialize()
 }
 
-// VerifyAndParseDocument verifies the signautre and deserializes the document.
-func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey) (*pki.Document, error) {
+func GetSignatures(b []byte) ([]jose.Signature, error) {
 	signed, err := jose.ParseSigned(string(b))
 	if err != nil {
 		return nil, err
+	}
+	return signed.Signatures, nil
+}
+
+// VerifyAndParseDocument verifies the signautre and deserializes the document.
+func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey) (*pki.Document, []byte, error) {
+	signed, err := jose.ParseSigned(string(b))
+	if err != nil {
+		return nil, nil, err
 	}
 
 	// Sanity check the signing algorithm and number of signatures, and
 	// validate the signature with the provided public key.
 	if len(signed.Signatures) != 1 {
-		return nil, fmt.Errorf("nonvoting: Expected 1 signature, got: %v", len(signed.Signatures))
+		return nil, nil, fmt.Errorf("nonvoting: Expected 1 signature, got: %v", len(signed.Signatures))
 	}
 	alg := signed.Signatures[0].Header.Algorithm
 	if alg != "EdDSA" {
-		return nil, fmt.Errorf("nonvoting: Unsupported signature algorithm: '%v'", alg)
+		return nil, nil, fmt.Errorf("nonvoting: Unsupported signature algorithm: '%v'", alg)
 	}
 	payload, err := signed.Verify(*publicKey.InternalPtr())
 	if err != nil {
 		if err == jose.ErrCryptoFailure {
 			err = fmt.Errorf("nonvoting: Invalid document signature")
 		}
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Parse the payload.
 	d := new(Document)
 	dec := codec.NewDecoderBytes(payload, jsonHandle)
 	if err = dec.Decode(d); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Ensure the document is well formed.
 	if d.Version != documentVersion {
-		return nil, fmt.Errorf("nonvoting: Invalid Document Version: '%v'", d.Version)
+		return nil, nil, fmt.Errorf("nonvoting: Invalid Document Version: '%v'", d.Version)
 	}
 
 	// Convert from the wire representation to a Document, and validate
@@ -133,7 +141,7 @@ func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey) (*pki.Document
 		for _, rawDesc := range nodes {
 			desc, err := VerifyAndParseDescriptor(rawDesc, doc.Epoch)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			doc.Topology[layer] = append(doc.Topology[layer], desc)
 		}
@@ -142,13 +150,13 @@ func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey) (*pki.Document
 	for _, rawDesc := range d.Providers {
 		desc, err := VerifyAndParseDescriptor(rawDesc, doc.Epoch)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		doc.Providers = append(doc.Providers, desc)
 	}
 
 	if err = IsDocumentWellFormed(doc); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Fixup the Layer field in all the Topology MixDescriptors.
@@ -158,7 +166,7 @@ func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey) (*pki.Document
 		}
 	}
 
-	return doc, nil
+	return doc, payload, nil
 }
 
 // IsDocumentWellFormed validates the document and returns a descriptive error
