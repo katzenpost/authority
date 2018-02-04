@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/pki"
 	"github.com/ugorji/go/codec"
@@ -83,12 +84,21 @@ func SignDocument(signingKey *eddsa.PrivateKey, d *Document) (string, error) {
 	return signed.CompactSerialize()
 }
 
-func GetSignatures(b []byte) ([]jose.Signature, error) {
-	signed, err := jose.ParseSigned(string(b))
+// VerifyPeerMulti returns a map of keys to signatures for
+// the peer keys that produced a valid signature
+func VerifyPeerMulti(payload []byte, peers []*config.AuthorityPeer) map[[eddsa.PublicKeySize]byte]*jose.Signature {
+	signed, err := jose.ParseSigned(string(payload))
 	if err != nil {
-		return nil, err
+		return nil
 	}
-	return signed.Signatures, nil
+	sigMap := make(map[[eddsa.PublicKeySize]byte]*jose.Signature)
+	for _, peer := range peers {
+		_, signature, _, err := signed.VerifyMulti(*peer.IdentityPublicKey.InternalPtr())
+		if err == nil {
+			sigMap[peer.IdentityPublicKey.ByteArray()] = &signature
+		}
+	}
+	return sigMap
 }
 
 // VerifyAndParseDocument verifies the signautre and deserializes the document.
@@ -107,7 +117,7 @@ func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey) (*pki.Document
 	if alg != "EdDSA" {
 		return nil, nil, fmt.Errorf("nonvoting: Unsupported signature algorithm: '%v'", alg)
 	}
-	payload, err := signed.Verify(*publicKey.InternalPtr())
+	_, _, payload, err := signed.VerifyMulti(*publicKey.InternalPtr())
 	if err != nil {
 		if err == jose.ErrCryptoFailure {
 			err = fmt.Errorf("nonvoting: Invalid document signature")

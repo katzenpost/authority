@@ -37,6 +37,7 @@ import (
 	"github.com/katzenpost/core/wire/commands"
 	"github.com/katzenpost/core/worker"
 	"gopkg.in/op/go-logging.v1"
+	"gopkg.in/square/go-jose.v2"
 )
 
 const (
@@ -80,6 +81,7 @@ type state struct {
 
 	votingEpoch  uint64
 	votingRawDoc []byte
+	signatureMap map[[eddsa.PublicKeySize]byte]*jose.Signature
 }
 
 func (s *state) Halt() {
@@ -486,11 +488,14 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 		return resp
 	}
 	if bytes.Equal(rawDoc, s.votingRawDoc) {
-		// XXX
-	}
-	_, err = s11n.GetSignatures(vote.Payload) // XXX
-	if err != nil {
-		// XXX
+		sigMap := s11n.VerifyPeerMulti(vote.Payload, s.s.cfg.Authorities)
+		for peerKey, signature := range sigMap {
+			if _, ok := s.signatureMap[peerKey]; !ok {
+				s.signatureMap[peerKey] = signature
+			}
+		}
+	} else {
+		s.log.Debug("received Vote's raw payload differs from our own")
 	}
 	s.log.Debug("Vote OK.")
 	resp := &commands.VoteStatus{
@@ -708,6 +713,7 @@ func newState(s *Server) (*state, error) {
 	st.s = s
 	st.log = s.logBackend.GetLogger("state")
 	st.updateCh = make(chan interface{}, 1) // Buffered!
+	st.signatureMap = make(map[[eddsa.PublicKeySize]byte]*jose.Signature)
 
 	// Initialize the authorized peer tables.
 	st.authorizedMixes = make(map[[eddsa.PublicKeySize]byte]bool)
