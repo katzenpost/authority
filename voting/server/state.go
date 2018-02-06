@@ -308,6 +308,13 @@ func (s *state) generateDocument(epoch uint64) {
 		s.s.fatalErrCh <- err
 		return
 	}
+	if len(sigMap) < len(s.s.cfg.Authorities)/2 {
+		// Require threshold votes to publish.
+		s.log.Error("Document not signed by majority Authority peers.")
+		err := errors.New("failure: PKI Document not signed by majority Authority peers.")
+		s.s.fatalErrCh <- err
+		return
+	}
 	if pDoc.Epoch != epoch {
 		// This should never happen either.
 		s.log.Errorf("Signed document has invalid epoch: %v", pDoc.Epoch)
