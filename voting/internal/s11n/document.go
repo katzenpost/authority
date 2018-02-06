@@ -55,12 +55,6 @@ type Document struct {
 	Providers [][]byte
 }
 
-func AppendSignatures(signed *jose.JSONWebSignature, signatures []*jose.Signature) {
-	for _, sig := range signatures {
-		signed.Signatures = append(signed.Signatures, *sig)
-	}
-}
-
 // SignDocument signs and serializes the document with the provided signing key.
 func SignDocument(signingKey *eddsa.PrivateKey, peerSignatures map[[eddsa.PublicKeySize]byte]*jose.Signature, d *Document) (string, error) {
 	d.Version = documentVersion
