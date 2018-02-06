@@ -310,9 +310,7 @@ func (s *state) generateDocument(epoch uint64) {
 	}
 	if len(sigMap) < len(s.s.cfg.Authorities)/2 {
 		// Require threshold votes to publish.
-		s.log.Error("Document not signed by majority Authority peers.")
-		err := errors.New("failure: PKI Document not signed by majority Authority peers.")
-		s.s.fatalErrCh <- err
+		s.log.Warning("Document not signed by majority Authority peers.")
 		return
 	}
 	if pDoc.Epoch != epoch {
@@ -338,6 +336,7 @@ func (s *state) generateDocument(epoch uint64) {
 	d.doc = pDoc
 	d.raw = []byte(signed)
 	s.documents[epoch] = d
+	s.signatureMap = make(map[[eddsa.PublicKeySize]byte]*jose.Signature)
 }
 
 func (s *state) generateTopology(nodeList []*descriptor, doc *pki.Document) [][][]byte {
