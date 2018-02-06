@@ -284,7 +284,7 @@ func (s *state) generateDocument(epoch uint64) {
 	}
 
 	// Serialize and sign the Document.
-	signed, err := s11n.SignDocument(s.s.identityKey, doc)
+	signed, err := s11n.SignDocument(s.s.identityKey, s.signatureMap, doc)
 	if err != nil {
 		// This should basically always succeed.
 		s.log.Errorf("Failed to sign document: %v", err)
@@ -293,10 +293,18 @@ func (s *state) generateDocument(epoch uint64) {
 	}
 
 	// Ensure the document is sane.
-	pDoc, _, err := s11n.VerifyAndParseDocument([]byte(signed), s.s.identityKey.PublicKey())
+	pDoc, rawDoc, err := s11n.VerifyAndParseDocument([]byte(signed), s.s.identityKey.PublicKey())
 	if err != nil {
 		// This should basically always succeed.
 		s.log.Errorf("Signed document failed validation: %v", err)
+		s.s.fatalErrCh <- err
+		return
+	}
+	sigMap := s11n.VerifyPeerMulti(rawDoc, s.s.cfg.Authorities)
+	if len(sigMap) != len(s.signatureMap) {
+		// This should never happen.
+		s.log.Error("Document not really signed by all Authority peers.")
+		err := errors.New("failure: PKI Document not really signed by all Authority peers.")
 		s.s.fatalErrCh <- err
 		return
 	}
@@ -495,7 +503,7 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 			}
 		}
 	} else {
-		s.log.Debug("received Vote's raw payload differs from our own")
+		s.log.Debug("Warning: Authority voting partition detected. Raw vote payload differs from our own")
 	}
 	s.log.Debug("Vote OK.")
 	resp := &commands.VoteStatus{
