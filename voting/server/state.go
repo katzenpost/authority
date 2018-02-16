@@ -415,20 +415,19 @@ func (s *state) generateConsensus(epoch uint64) {
 		for _, topoLayer := range voteDoc.doc.Topology {
 			for _, voteDesc := range topoLayer {
 				mixId := voteDesc.IdentityKey.ByteArray()
-				if mixDesc, ok := s.descriptors[epoch][mixId]; !ok {
-					s.log.Debugf("new descriptor from peer: %s descriptor %s", identityKey, voteDesc)
-				}
 				mixTally[mixId] = append(mixTally[mixId], voteDoc)
 			}
 		}
-		for _, provider := range voteDoc.doc.Providers {
-			//s.descriptors[epoch]
+		for _, voteDesc := range voteDoc.doc.Providers {
+			mixId := voteDesc.IdentityKey.ByteArray()
+			mixTally[mixId] = append(mixTally[mixId], voteDoc)
 		}
 	}
 
 	for mixIdentity, votes := range mixTally {
 		if len(votes) < (len(s.s.cfg.Authorities)/2 + 1) {
 			// do not include this mix
+			continue
 		}
 		// XXX WTF if agree, disagree, err := votesAgree(mixIdentity, votes) {
 		// do not include this mix
@@ -668,14 +667,6 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 		}
 		return resp
 	}
-	if doc.Epoch != s.votingEpoch {
-		s.log.Error("Vote command invalid: epoch mismatch.")
-		resp := &commands.VoteStatus{
-			ErrorCode: commands.VoteMalformed,
-		}
-		return resp
-	}
-
 	if _, ok := s.votes[s.votingEpoch]; !ok {
 		s.votes[s.votingEpoch] = make(map[[eddsa.PublicKeySize]byte]*document)
 	}
