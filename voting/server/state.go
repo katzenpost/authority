@@ -369,8 +369,7 @@ func (s *state) generateVote(epoch uint64) {
 	// XXX wtf fix me
 }
 
-// XXX write unit tests for me
-func (s *state) votesAgree(mixIdentity [eddsa.PublicKeySize]byte, votes []*pki.Document, threshold int) ([]*pki.Document, []*pki.Document, error) {
+func (s *state) isVoteThreshold(mixIdentity [eddsa.PublicKeySize]byte, votes []*pki.Document, threshold int) bool {
 	seen := make(map[string][]*pki.Document)
 	agree := make([]*pki.Document, 0)
 	disagree := make([]*pki.Document, 0)
@@ -399,9 +398,9 @@ func (s *state) votesAgree(mixIdentity [eddsa.PublicKeySize]byte, votes []*pki.D
 		}
 	}
 	if len(agree) > threshold {
-		return agree, disagree, nil
+		return true
 	}
-	return nil, nil, errors.New("votesAgree failure, not enough descriptors")
+	return false
 }
 
 func (s *state) generateConsensus(epoch uint64) {
