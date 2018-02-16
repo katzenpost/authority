@@ -265,7 +265,7 @@ func (s *state) sendVoteToPeer(peer *config.AuthorityPeer, vote []byte) error {
 	cfg := &wire.SessionConfig{
 		Authenticator:     s,
 		AdditionalData:    []byte(""),
-		AuthenticationKey: s.s.cfg.Debug.LinkKey,
+		AuthenticationKey: s.s.cfg.Debug.IdentityKey.ToECDH(),
 		RandomReader:      rand.Reader,
 	}
 	session, err := wire.NewSession(cfg, true)
@@ -355,12 +355,14 @@ func (s *state) generateVote(epoch uint64) {
 
 	// Build the Document.
 	doc := &s11n.Document{
-		Epoch:     epoch,
-		Lambda:    s.s.cfg.Parameters.Lambda,
-		MaxDelay:  s.s.cfg.Parameters.MaxDelay,
-		LambdaP:   s.s.cfg.Parameters.LambdaP,
-		Topology:  topology,
-		Providers: providers,
+		Epoch:           epoch,
+		MixLambda:       s.s.cfg.Parameters.MixLambda,
+		MixMaxDelay:     s.s.cfg.Parameters.MixMaxDelay,
+		SendLambda:      s.s.cfg.Parameters.SendLambda,
+		SendShift:       s.s.cfg.Parameters.SendShift,
+		SendMaxInterval: s.s.cfg.Parameters.SendMaxInterval,
+		Topology:        topology,
+		Providers:       providers,
 	}
 
 	// XXX wtf fix me
@@ -368,18 +370,20 @@ func (s *state) generateVote(epoch uint64) {
 
 func votesAgree(mixIdentity []byte, votes []*pki.Document, threshold int) ([]*pki.Document, []*pki.Document, error) {
 	seen := make(map[string][]*pki.Document)
-	agree := make([]*pki.Document)
-	disagree := make([]*pki.Document)
+	agree := make([]*pki.Document, 0)
+	disagree := make([]*pki.Document, 0)
 	for i, vote := range votes {
-		if voteMixDesc, err := vote.GetMixByKey(mixIdentity); err {
+		voteMixDesc, err := vote.GetMixByKey(mixIdentity)
+		if err != nil {
 			continue // not in this vote
 		}
-		if rawVoteMixDesc, err := SerializeDescriptor(voteMixDesc); err {
+		rawVoteMixDesc, err := s11n.SerializeDescriptor(voteMixDesc)
+		if err != nil {
 			continue // ERROR
 		}
-		voteHash = string(rawVoteMixDesc) // hash it?
+		voteHash := string(rawVoteMixDesc) // hash it?
 		if _, ok := seen[voteHash]; !ok {
-			seen[voteHash] = make([]*pki.Document)
+			seen[voteHash] = make([]*pki.Document, 0)
 		}
 		seen[voteHash] = append(seen[voteHash], vote)
 	}
@@ -387,7 +391,7 @@ func votesAgree(mixIdentity []byte, votes []*pki.Document, threshold int) ([]*pk
 		if len(votes) > threshold {
 			agree = votes
 		} else {
-			disagree = append(disagree, votes)
+			disagree = append(disagree, votes...)
 		}
 	}
 	if len(agree) > threshold {
@@ -423,7 +427,7 @@ func (s *state) generateConsensus(epoch uint64) {
 	}
 
 	for mixIdentity, votes := range mixTally {
-		if len(votes) < len(s.threshold) {
+		if len(votes) < (len(s.s.cfg.Authorities)/2 + 1) {
 			// do not include this mix
 		}
 		// XXX WTF if agree, disagree, err := votesAgree(mixIdentity, votes) {
