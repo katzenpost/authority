@@ -427,24 +427,54 @@ func (s *state) generateConsensus(epoch uint64) {
 		}
 	}
 
-	// for mixIdentity, votes := range mixTally {
-	// 	if len(votes) < (len(s.s.cfg.Authorities)/2 + 1) {
-	// 		// do not include this mix
-	// 		continue
-	// 	}
-	// 	// XXX WTF if agree, disagree, err := votesAgree(mixIdentity, votes) {
-	// 	// do not include this mix
-	// 	//}
-	// 	//if mix, err := votes[0].GetMixByKey(mixIdentity) {
-	// 	//}
-	// 	// check that the mix is valid in the next epoch; has keys for the
-	// 	// voting epoch (XXX: and the epoch afterwards?)
-	// 	// check that the mix only published one descriptor for this epoch
-	// 	mix.MixKeys[s.votingEpoch+1]
-	// 	if mix.MixKeys[s.votingEpoch] == nil {
-	// 		// XXX
-	// 	}
-	// }
+	consensusIdentities := make(map[[32]byte]*document)
+	for mixIdentity, votes := range mixTally {
+		if len(votes) < (len(s.s.cfg.Authorities)/2 + 1) {
+			s.log.Debugf("generateConsensus excluding mix identity, less than threshold votes")
+			continue
+		}
+		if !s.isVoteThreshold(mixIdentity, votes, len(s.s.cfg.Authorities)/2+1) {
+			s.log.Debugf("generateConsensus excluding mix identity, threshold not met")
+			continue
+		}
+		if mix.MixKeys[s.votingEpoch] == nil {
+			s.log.Debugf("generateConsensus excluding mix identity, does not have MixKey for voting epoch")
+			continue
+		}
+		consensusIdentities[mixIdentity.ByteArray()] = votes
+	}
+
+	// Carve out the descriptors between providers and nodes.
+	var providers [][]byte
+	var nodes []*descriptor
+	for _, votes := range consensusIdentities {
+		v := votes[0]
+		if v.desc.Layer == pki.LayerProvider {
+			providers = append(providers, v.raw)
+		} else {
+			nodes = append(nodes, v)
+		}
+	}
+
+	// Assign nodes to layers.
+	var topology [][][]byte
+	if d, ok := s.documents[epoch-1]; ok {
+		topology = s.generateTopology(nodes, d.doc)
+	} else {
+		topology = s.generateRandomTopology(nodes)
+	}
+
+	// Build the Document.
+	consensusDocument := &s11n.Document{
+		Epoch:           epoch,
+		MixLambda:       s.s.cfg.Parameters.MixLambda,
+		MixMaxDelay:     s.s.cfg.Parameters.MixMaxDelay,
+		SendLambda:      s.s.cfg.Parameters.SendLambda,
+		SendShift:       s.s.cfg.Parameters.SendShift,
+		SendMaxInterval: s.s.cfg.Parameters.SendMaxInterval,
+		Topology:        topology,
+		Providers:       providers,
+	}
 
 	// consensusDocument
 
