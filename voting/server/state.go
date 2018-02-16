@@ -365,29 +365,33 @@ func (s *state) generateVote(epoch uint64) {
 		Providers:       providers,
 	}
 
+	s.log.Noticef("notice %s", doc)
 	// XXX wtf fix me
 }
 
-func votesAgree(mixIdentity []byte, votes []*pki.Document, threshold int) ([]*pki.Document, []*pki.Document, error) {
+// XXX write unit tests for me
+func (s *state) votesAgree(mixIdentity [eddsa.PublicKeySize]byte, votes []*pki.Document, threshold int) ([]*pki.Document, []*pki.Document, error) {
 	seen := make(map[string][]*pki.Document)
 	agree := make([]*pki.Document, 0)
 	disagree := make([]*pki.Document, 0)
-	for i, vote := range votes {
-		voteMixDesc, err := vote.GetMixByKey(mixIdentity)
+	for _, vote := range votes {
+		voteMixDesc, err := vote.GetMixByKey(mixIdentity[:])
 		if err != nil {
-			continue // not in this vote
+			s.log.Errorf("votesAgree: GetMixByKey failure: %s", err)
+			continue
 		}
 		rawVoteMixDesc, err := s11n.SerializeDescriptor(voteMixDesc)
 		if err != nil {
-			continue // ERROR
+			s.log.Errorf("votesAgree: SerializeDescriptor failure: %s", err)
+			continue
 		}
-		voteHash := string(rawVoteMixDesc) // hash it?
+		voteHash := string(rawVoteMixDesc) // XXX hash it?
 		if _, ok := seen[voteHash]; !ok {
 			seen[voteHash] = make([]*pki.Document, 0)
 		}
 		seen[voteHash] = append(seen[voteHash], vote)
 	}
-	for mixDesc, votes := range seen {
+	for _, votes := range seen {
 		if len(votes) > threshold {
 			agree = votes
 		} else {
@@ -411,7 +415,7 @@ func (s *state) generateConsensus(epoch uint64) {
 
 	mixTally := make(map[[eddsa.PublicKeySize]byte][]*document)
 
-	for identityKey, voteDoc := range s.votes[epoch] {
+	for _, voteDoc := range s.votes[epoch] {
 		for _, topoLayer := range voteDoc.doc.Topology {
 			for _, voteDesc := range topoLayer {
 				mixId := voteDesc.IdentityKey.ByteArray()
@@ -424,85 +428,87 @@ func (s *state) generateConsensus(epoch uint64) {
 		}
 	}
 
-	for mixIdentity, votes := range mixTally {
-		if len(votes) < (len(s.s.cfg.Authorities)/2 + 1) {
-			// do not include this mix
-			continue
-		}
-		// XXX WTF if agree, disagree, err := votesAgree(mixIdentity, votes) {
-		// do not include this mix
-		//}
-		//if mix, err := votes[0].GetMixByKey(mixIdentity) {
-		//}
-		// check that the mix is valid in the next epoch; has keys for the
-		// voting epoch (XXX: and the epoch afterwards?)
-		// check that the mix only published one descriptor for this epoch
-		mix.MixKeys[s.votingEpoch+1]
-		if mix.MixKeys[s.votingEpoch] == nil {
-			// XXX
-		}
-	}
+	// for mixIdentity, votes := range mixTally {
+	// 	if len(votes) < (len(s.s.cfg.Authorities)/2 + 1) {
+	// 		// do not include this mix
+	// 		continue
+	// 	}
+	// 	// XXX WTF if agree, disagree, err := votesAgree(mixIdentity, votes) {
+	// 	// do not include this mix
+	// 	//}
+	// 	//if mix, err := votes[0].GetMixByKey(mixIdentity) {
+	// 	//}
+	// 	// check that the mix is valid in the next epoch; has keys for the
+	// 	// voting epoch (XXX: and the epoch afterwards?)
+	// 	// check that the mix only published one descriptor for this epoch
+	// 	mix.MixKeys[s.votingEpoch+1]
+	// 	if mix.MixKeys[s.votingEpoch] == nil {
+	// 		// XXX
+	// 	}
+	// }
 
 	// consensusDocument
 
-	// Serialize and sign the Document.
-	signed, err := s11n.MultiSignDocument(s.s.identityKey, s.signatureMap, consensusDocument)
-	if err != nil {
-		// This should basically always succeed.
-		s.log.Errorf("Failed to sign document: %v", err)
-		s.s.fatalErrCh <- err
-		return
-	}
+	/*
+		// Serialize and sign the Document.
+		signed, err := s11n.MultiSignDocument(s.s.identityKey, s.signatureMap, consensusDocument)
+		if err != nil {
+			// This should basically always succeed.
+			s.log.Errorf("Failed to sign document: %v", err)
+			s.s.fatalErrCh <- err
+			return
+		}
 
-	// Ensure the document is sane.
-	pDoc, rawDoc, err := s11n.VerifyAndParseDocument([]byte(signed), s.s.identityKey.PublicKey())
-	if err != nil {
-		// This should basically always succeed.
-		s.log.Errorf("Signed document failed validation: %v", err)
-		s.s.fatalErrCh <- err
-		return
-	}
-	sigMap := s11n.VerifyPeerMulti(rawDoc, s.s.cfg.Authorities)
-	if len(sigMap) != len(s.signatureMap) {
-		// This should never happen.
-		s.log.Error("Document not really signed by all Authority peers.")
-		err := errors.New("failure: PKI Document not really signed by all Authority peers.")
-		s.s.fatalErrCh <- err
-		return
-	}
-	if len(sigMap) < len(s.s.cfg.Authorities)/2 {
-		// Require threshold votes to publish.
-		s.log.Warning("Document not signed by majority Authority peers.")
-		return
-	}
-	if pDoc.Epoch != epoch {
-		// This should never happen either.
-		s.log.Errorf("Signed document has invalid epoch: %v", pDoc.Epoch)
-		s.s.fatalErrCh <- s11n.ErrInvalidEpoch
-		return
-	}
+		// Ensure the document is sane.
+		pDoc, rawDoc, err := s11n.VerifyAndParseDocument([]byte(signed), s.s.identityKey.PublicKey())
+		if err != nil {
+			// This should basically always succeed.
+			s.log.Errorf("Signed document failed validation: %v", err)
+			s.s.fatalErrCh <- err
+			return
+		}
+		sigMap := s11n.VerifyPeerMulti(rawDoc, s.s.cfg.Authorities)
+		if len(sigMap) != len(s.signatureMap) {
+			// This should never happen.
+			s.log.Error("Document not really signed by all Authority peers.")
+			err := errors.New("failure: PKI Document not really signed by all Authority peers.")
+			s.s.fatalErrCh <- err
+			return
+		}
+		if len(sigMap) < len(s.s.cfg.Authorities)/2 {
+			// Require threshold votes to publish.
+			s.log.Warning("Document not signed by majority Authority peers.")
+			return
+		}
+		if pDoc.Epoch != epoch {
+			// This should never happen either.
+			s.log.Errorf("Signed document has invalid epoch: %v", pDoc.Epoch)
+			s.s.fatalErrCh <- s11n.ErrInvalidEpoch
+			return
+		}
 
-	s.log.Debugf("Document (Parsed): %v", pDoc)
+		s.log.Debugf("Document (Parsed): %v", pDoc)
 
-	// XXX Store votes to disk.
+		// XXX Store votes to disk.
 
-	// XXX Publish votes: send votes to peers.
+		// XXX Publish votes: send votes to peers.
 
-	// Persist the document to disk.
-	if err := s.db.Update(func(tx *bolt.Tx) error {
-		bkt := tx.Bucket([]byte(documentsBucket))
-		bkt.Put(epochToBytes(epoch), []byte(signed))
-		return nil
-	}); err != nil {
-		// Persistence failures are FATAL.
-		s.s.fatalErrCh <- err
-	}
+		// Persist the document to disk.
+		if err := s.db.Update(func(tx *bolt.Tx) error {
+			bkt := tx.Bucket([]byte(documentsBucket))
+			bkt.Put(epochToBytes(epoch), []byte(signed))
+			return nil
+		}); err != nil {
+			// Persistence failures are FATAL.
+			s.s.fatalErrCh <- err
+		}
 
-	d := new(document)
-	d.doc = pDoc
-	d.raw = []byte(signed)
-	s.documents[epoch] = d
-	s.signatureMap = make(map[[eddsa.PublicKeySize]byte]*jose.Signature)
+		d := new(document)
+		d.doc = pDoc
+		d.raw = []byte(signed)
+		s.documents[epoch] = d
+		s.signatureMap = make(map[[eddsa.PublicKeySize]byte]*jose.Signature)
+	*/
 }
 
 func (s *state) generateTopology(nodeList []*descriptor, doc *pki.Document) [][][]byte {
@@ -670,8 +676,8 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 	if _, ok := s.votes[s.votingEpoch]; !ok {
 		s.votes[s.votingEpoch] = make(map[[eddsa.PublicKeySize]byte]*document)
 	}
-	if _, ok := s.votes[s.votingEpoch][vote.PublicKey.BytesArray()]; !ok {
-		s.votes[epoch][vote.PublicKey.BytesArray()] = &document{
+	if _, ok := s.votes[s.votingEpoch][vote.PublicKey.ByteArray()]; !ok {
+		s.votes[s.votingEpoch][vote.PublicKey.ByteArray()] = &document{
 			raw: rawDoc,
 			doc: doc,
 		}
