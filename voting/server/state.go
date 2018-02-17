@@ -480,7 +480,7 @@ func (s *state) generateSignedDocument(epoch uint64) {
 			s.log.Debugf("generateConsensus excluding mix identity, threshold not met")
 			continue
 		}
-		rawDoc := s.document[s.votingEpoch].raw
+		rawDoc := s.document[epoch].raw
 		targetpubkey := eddsa.PublicKey.FromBytes(mixIdentity)
 		rawDesc, err := s11n.GetSignedMixDescriptor(rawDoc, s.s.cfg.pubkey, targetpubkey)
 		if err != nil {
