@@ -85,7 +85,7 @@ type state struct {
 	votingEpoch  uint64
 	votingState  VoteState
 	signatureMap map[[eddsa.PublicKeySize]byte]*jose.Signature
-	threshold int
+	threshold    int
 }
 
 func (s *state) Halt() {
