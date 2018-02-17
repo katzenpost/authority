@@ -162,9 +162,8 @@ func (s *state) onWakeup() {
 		}
 	}
 	if elapsed > authorityVoteDeadline && elapsed < publishConsensusDeadline {
-		if s.documents[epoch+1] == nil {
-			s.generateSignedDocument(epoch + 1)
-			s.sendSignedDocumentToAuthorities(epoch + 1)
+		if s.documents[s.votingEpoch] == nil {
+			s.consense()
 		}
 	}
 
@@ -443,19 +442,15 @@ func (s *state) extractSignedDescriptor(id [eddsa.PublicKeySize]byte, rawDoc []b
 	return nil, nil // XXX
 }
 
-func (s *state) generateSignedDocument(epoch uint64) {
+func (s *state) tallyMixes(votes []*document) []*descriptor {
 	// Lock is held (called from the onWakeup hook).
-
-	s.log.Noticef("Generating Consensus Document for epoch %v.", epoch)
-
-	votes, ok := s.votes[epoch]
 	if !(ok && len(votes) > s.threshold) {
 		s.log.Notice("Did not receive threshold number of votes.")
 		return
 	}
 
 	mixTally := make(map[[eddsa.PublicKeySize]byte][]*document)
-	for _, voteDoc := range s.votes[epoch] {
+	for _, voteDoc := range votes {
 		for _, topoLayer := range voteDoc.doc.Topology {
 			for _, voteDesc := range topoLayer {
 				mixId := voteDesc.IdentityKey.ByteArray()
@@ -475,7 +470,30 @@ func (s *state) generateSignedDocument(epoch uint64) {
 		}
 	}
 
-	consensus := s.vote(nodes)
+	return nodes
+}
+
+func (s *state) consensus(epoch uint64) {
+	// Lock is held (called from the onWakeup hook).
+
+	s.log.Noticef("Generating Consensus Document for epoch %v.", epoch)
+
+	votes, ok := s.votes[epoch]
+	if !(ok && len(votes) > s.threshold) {
+		s.log.Notice("Did not receive threshold number of votes.")
+		return
+	}
+	if len(s.signatureMap) < s.threshold {
+		// Require threshold votes to publish.
+		s.log.Warning("Document not signed by majority Authority peers.")
+		return
+	}
+
+	// tally parameters
+	// XXX: !!!
+
+	mixes := tallyMixes(votes)
+	consensus := s.vote(mixes)
 
 	// Serialize and sign the Document.
 	signed, err := s11n.MultiSignDocument(s.s.identityKey, s.signatureMap, consensus.doc)
