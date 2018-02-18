@@ -205,9 +205,6 @@ func (s *state) onWakeup() {
 		if !s.tabulated(s.votingEpoch) {
 			s.tabulate(s.votingEpoch)
 		}
-		if s.documents[s.votingEpoch] == nil {
-			s.tabulateVotes(s.votingEpoch)
-		}
 	}
 	// we should now have received enough signatures to make consensus.
 	if elapsed > publishConsensusDeadline {
