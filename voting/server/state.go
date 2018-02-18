@@ -232,7 +232,7 @@ func (s *state) combine(epoch uint64) {
 	}
 	if !s.isConsensus(epoch) {
 		// XXX we don't have a consensus! OH NOES!
-		delete(s.documents, epoch)
+		delete(s.documents, epoch) // XXX: really?
 	} else {
 		// save consensus to disk
 	}
