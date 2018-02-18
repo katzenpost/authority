@@ -60,8 +60,9 @@ type document struct {
 	raw []byte
 }
 
-func (d *document) getSig(peer xxx) error {
-	//returns the signature by peer if any
+func (d *document) getSig() error {
+	// XXX unfuck me: returns the signature by peer if any
+	return nil
 }
 
 func (d *document) addSig(sig *jose.Signature) error {
@@ -72,23 +73,23 @@ func (d *document) addSig(sig *jose.Signature) error {
 	// verify the signature hasn't already been added
 	if len(signed.Signatures) != 0 {
 		for _, v := range signed.Signatures {
-			if bytes.Equals(v.Signature, sig.Signature) {
+			if bytes.Equal(v.Signature, sig.Signature) {
 				return fmt.Errorf("Already attached signature!")
 			}
 		}
 	}
 	// verify that the signature signs the document
-	signed.Signatures = append(signed.Signatures, sig)
+	signed.Signatures = append(signed.Signatures, *sig)
 	_, signature, _, err := signed.VerifyMulti(sig)
 	if err == nil {
 		// update object
-		d.raw = signed.FullSerialize()
+		d.raw = []byte(signed.FullSerialize())
 	}
 	return err
 }
 
-func (d *document) sigs() []*jose.Signature {
-	if raw != nil && doc != nil {
+func (d *document) sigs() []jose.Signature {
+	if d.raw != nil && d.doc != nil {
 		signed, err := jose.ParseSigned(string(d.raw))
 		if err != nil {
 			return nil
@@ -96,6 +97,7 @@ func (d *document) sigs() []*jose.Signature {
 			return signed.Signatures
 		}
 	}
+	return nil
 }
 
 type VoteState byte
@@ -203,7 +205,7 @@ func (s *state) onWakeup() {
 	// of the document this authority believes will be the consensus
 	if elapsed > authorityVoteDeadline && elapsed < publishConsensusDeadline {
 		if s.documents[s.votingEpoch] == nil {
-			doc := s.tabulateVotes()
+			doc := s.tabulateVotes(s.votingEpoch)
 			if doc != nil {
 				s.documents[s.votingEpoch] = doc
 			} else {
@@ -230,12 +232,12 @@ func (s *state) identityPubKey() [eddsa.PublicKeySize]byte {
 
 func (s *state) currentVote() *pki.Document {
 	if _, ok := s.votes[s.votingEpoch]; ok {
-		return s.votes[s.votingEpoch][s.identityPubKey()]
+		return s.votes[s.votingEpoch][s.identityPubKey()].doc
 	}
 	return nil
 }
 
-func (s *state) getDocument(descriptors []*descriptor) *slln.Document {
+func (s *state) getDocument(descriptors []*descriptor) *s11n.Document {
 	// Carve out the descriptors between providers and nodes.
 	var providers [][]byte
 	var nodes []*descriptor
@@ -270,7 +272,7 @@ func (s *state) getDocument(descriptors []*descriptor) *slln.Document {
 }
 
 func (s *state) vote() *document {
-	vote := getDocument(s.descriptors)
+	vote := s.getDocument(s.descriptors)
 	signedVote := s.sign(vote)
 	// save our own vote
 	if _, ok := s.votes[s.votingEpoch]; !ok {
