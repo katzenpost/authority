@@ -271,8 +271,12 @@ func (s *state) getDocument(descriptors []*descriptor) *s11n.Document {
 	return doc
 }
 
-func (s *state) vote() *document {
-	vote := s.getDocument(s.descriptors)
+func (s *state) vote() {
+	descriptors := []*descriptor{}
+	for _, desc := range s.descriptors[s.votingEpoch] {
+		descriptors = append(descriptors, desc)
+	}
+	vote := s.getDocument(descriptors)
 	signedVote := s.sign(vote)
 	// save our own vote
 	if _, ok := s.votes[s.votingEpoch]; !ok {
@@ -284,9 +288,9 @@ func (s *state) vote() *document {
 		s.log.Errorf("failure: vote already present, this should never happen.")
 		err := errors.New("failure: vote already present, this should never happen.")
 		s.s.fatalErrCh <- err
-		return nil
+		return
 	}
-	s.sendVoteToAuthorities(signedVote)
+	s.sendVoteToAuthorities(signedVote.raw)
 }
 
 func (s *state) sign(doc *s11n.Document) *document {
@@ -309,7 +313,7 @@ func (s *state) sign(doc *s11n.Document) *document {
 	}
 	return &document{
 		doc: pDoc,
-		raw: signed,
+		raw: []byte(signed),
 	}
 }
 
@@ -408,7 +412,7 @@ func (s *state) agreedDescriptor(mixIdentity [eddsa.PublicKeySize]byte, votes []
 		return nil
 	}
 
-	seen := make(map[[]byte][]*pki.Document)
+	seen := make(map[string][]*pki.Document)
 	agree := make([]*pki.Document, 0)
 	disagree := make([]*pki.Document, 0)
 	for _, vote := range votes {
@@ -419,19 +423,25 @@ func (s *state) agreedDescriptor(mixIdentity [eddsa.PublicKeySize]byte, votes []
 		}
 		rawVoteMixDesc, err := s11n.SerializeDescriptor(voteMixDesc)
 		if err != nil {
+			s.log.Errorf("s11n.SerializeDescriptor failure: %s", err)
+			continue
+		}
+
+		rawVoteMixDescStr := string(rawVoteMixDesc)
+		if err != nil {
 			s.log.Errorf("votesAgree: SerializeDescriptor failure: %s", err)
 			continue
 		}
-		if _, ok := seen[rawVoteMixDesc]; !ok {
-			seen[rawVoteMixDesc] = make([]*pki.Document, 0)
+		if _, ok := seen[rawVoteMixDescStr]; !ok {
+			seen[rawVoteMixDescStr] = make([]*pki.Document, 0)
 		}
-		seen[rawVoteMixDesc] = append(seen[rawVoteMixDesc], vote)
+		seen[rawVoteMixDescStr] = append(seen[rawVoteMixDescStr], vote)
 	}
 	for rawVoteMixDesc, votes := range seen {
 		if len(votes) > s.threshold {
-			voteMixDesc, err := VerifyAndParseDescriptor(rawVoteMixDesc, s.votingEpoch)
-			if !err {
-				return &descriptor{desc: voteMixDesc, raw: rawVoteMixDesc}
+			voteMixDesc, err := s11n.VerifyAndParseDescriptor([]byte(rawVoteMixDesc), s.votingEpoch)
+			if err != nil {
+				return &descriptor{desc: voteMixDesc, raw: []byte(rawVoteMixDesc)}
 			}
 		}
 	}
@@ -453,11 +463,12 @@ func (s *state) extractSignedDescriptor(id [eddsa.PublicKeySize]byte, rawDoc []b
 
 func (s *state) tallyMixes(epoch uint64) []*descriptor {
 	// Lock is held (called from the onWakeup hook).
-	if _, ok := s.votes[epoch]; !ok {
+	_, ok := s.votes[epoch]
+	if !ok {
 		s.log.Notice("No votes for epoch %v", epoch)
 		return nil
 	}
-	if !(ok && len(votes) > s.threshold) {
+	if len(s.votes) <= s.threshold {
 		s.log.Notice("Did not receive threshold number of votes.")
 		return nil
 	}
@@ -478,7 +489,7 @@ func (s *state) tallyMixes(epoch uint64) []*descriptor {
 
 	var nodes []*descriptor
 	for mixIdentity, votes := range mixTally {
-		if desc := agreedDescriptor(mixIdentity, votes); desc != nil {
+		if desc := s.agreedDescriptor(mixIdentity, votes); desc != nil {
 			nodes = append(nodes, desc)
 		}
 	}
