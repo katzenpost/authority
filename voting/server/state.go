@@ -238,7 +238,6 @@ func (s *state) combine(epoch uint64) {
 	}
 }
 
-
 func (s *state) identityPubKey() [eddsa.PublicKeySize]byte {
 	return s.s.identityKey.PublicKey().ByteArray()
 }
