@@ -60,15 +60,6 @@ type document struct {
 	raw []byte
 }
 
-func (d *document) isConsensus(threshold int) bool {
-	if len(d.sigs()) > threshold {
-		// doesn't validate signatures
-		return true
-	}
-	return false
-}
-
-
 func (d *document) getSig(peer xxx) error {
 	//returns the signature by peer if any
 }
@@ -207,14 +198,25 @@ func (s *state) onWakeup() {
 			s.vote()
 		}
 	}
+	// If it is now past the voting deadline, and before the consensus
+	// has been published, send a signature to the other authorities
+	// of the document this authority believes will be the consensus
 	if elapsed > authorityVoteDeadline && elapsed < publishConsensusDeadline {
 		if s.documents[s.votingEpoch] == nil {
-			s.getConsensus()
+			doc := s.tabulateVotes()
+			if doc != nil {
+				s.documents[s.votingEpoch] = doc
+			} else {
+				// XXX failed to tabulate votes??
+			}
 		}
 	}
-
+	// we should now have received enough signatures to make consensus.
 	if elapsed > publishConsensusDeadline {
-		if len(s.signatureMap) > s.threshold {
+		if !s.isConsensus(s.votingEpoch) {
+			// XXX we don't have a consensus! OH NOES!
+		} else {
+			// save consensus to disk
 		}
 	}
 
@@ -485,16 +487,13 @@ func (s *state) tallyMixes(epoch uint64) []*descriptor {
 func (s *state) getConsensus(epoch uint64) *document {
 	// Lock is held (called from the onWakeup hook).
 	// already have consensus for this epoch
-	if c, ok := s.documents[epoch]; ok {
-		if c.isConsensus(s.threshold) {
-			return c
-		}
-		// not enough signatures received, no consensus yet
-		return nil
+	if s.isConsensus(epoch) {
+		return s.documents[epoch]
 	}
+	return nil
 }
 
-func (s *state) makeConsensus(epoch uint64) *document {
+func (s *state) tabulateVotes(epoch uint64) *document {
 	s.log.Noticef("Generating Consensus Document for epoch %v.", epoch)
 	// include all the valid mixes from votes, including our own.
 	mixes := s.tallyMixes(epoch)
@@ -517,45 +516,27 @@ func (s *state) makeConsensus(epoch uint64) *document {
 		s.s.fatalErrCh <- err
 		return nil
 	}
-	sigMap := s11n.VerifyPeerMulti(rawDoc, s.s.cfg.Authorities)
-	if len(sigMap) != len(s.signatureMap) {
-		// This should never happen.
-		s.log.Error("Document not really signed by all Authority peers.")
-		err := errors.New("failure: PKI Document not really signed by all Authority peers.")
-		s.s.fatalErrCh <- err
-		return nil
-	}
-	if len(sigMap) < s.threshold {
-		// Require threshold votes to publish.
-		s.log.Warning("Document not signed by majority Authority peers.")
-		return nil
-	}
-	if pDoc.Epoch != epoch {
-		// This should never happen either.
-		s.log.Errorf("Signed document has invalid epoch: %v", pDoc.Epoch)
-		s.s.fatalErrCh <- s11n.ErrInvalidEpoch
-		return nil
+
+	// add the tabulated document to documents; awaiting peer signatures
+	if _, ok := s.documents[epoch]; !ok {
+		doc := &document{doc: pDoc, raw: rawDoc}
+		return doc
 	}
 
-	s.log.Debugf("Document (Parsed): %v", pDoc)
-
-	// Persist the document to disk.
-	if err := s.db.Update(func(tx *bolt.Tx) error {
-		bkt := tx.Bucket([]byte(documentsBucket))
-		bkt.Put(epochToBytes(epoch), []byte(signed))
-		return nil
-	}); err != nil {
-		// Persistence failures are FATAL.
-		s.s.fatalErrCh <- err
-	}
-
-	d := new(document)
-	d.doc = pDoc
-	d.raw = []byte(signed)
-	s.documents[epoch] = d
-	s.signatureMap = make(map[[eddsa.PublicKeySize]byte]*jose.Signature)
-	return d
 }
+
+func (s *state) isConsensus(epoch uint64) bool {
+	doc, ok := s.documents[epoch]
+	if !ok {
+		return false
+	}
+	sigMap := s11n.VerifyPeerMulti(doc.raw, s.s.cfg.Authorities)
+	if len(sigMap) > s.threshold {
+		return true
+	}
+	return false
+}
+
 
 func (s *state) generateTopology(nodeList []*descriptor, doc *pki.Document) [][][]byte {
 	s.log.Debugf("Generating mix topology.")
