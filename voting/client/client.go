@@ -23,7 +23,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	mrand "math/rand"
+	//mrand "math/rand"
 	"net"
 
 	"github.com/katzenpost/authority/voting/internal/s11n"
@@ -207,7 +207,10 @@ func (p *connectionPool) allPeersRoundTrip(ctx context.Context, linkKey *ecdh.Pr
 func (p *connectionPool) randomPeerRoundTrip(ctx context.Context, linkKey *ecdh.PrivateKey, cmd commands.Command) (commands.Command, error) {
 	doneCh := make(chan interface{})
 	defer close(doneCh)
-	peerIndex := mrand.Intn(len(p.cfg.Authorities))
+	//peerIndex := mrand.Intn(len(p.cfg.Authorities) - 1)
+	peerIndex := 0
+
+	fmt.Printf("blah test: %v", p.cfg)
 	conn, err := p.initSession(ctx, doneCh, linkKey, nil, p.cfg.Authorities[peerIndex])
 	if err != nil {
 		return nil, err
@@ -360,6 +363,7 @@ func New(cfg *Config) (pki.Client, error) {
 	c := new(client)
 	c.cfg = cfg
 	c.log = cfg.LogBackend.GetLogger("pki/voting/client")
+	c.pool = NewConnectionPool(cfg)
 
 	return c, nil
 }
