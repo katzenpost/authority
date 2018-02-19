@@ -312,20 +312,31 @@ func (c *client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 		return nil, nil, fmt.Errorf("voting/Client: Get() rejected by authority: %v", getErrorToString(r.ErrorCode))
 	}
 
-	// Validate the document.
+	// Verify document signatures.
 	doc := &pki.Document{}
-	for _, authority := range c.cfg.Authorities {
-		doc, _, err = s11n.VerifyAndParseDocument(r.Payload, authority.IdentityPublicKey)
-		if err != nil {
-			return nil, nil, err
-		}
+	sigMap, err := s11n.VerifyPeerMulti(r.Payload, c.cfg.Authorities)
+	if err != nil {
+		return nil, nil, fmt.Errorf("voting/client: Get() invalid consensus document: %s", err)
 	}
-	if doc.Epoch != epoch {
-		c.log.Warningf("voting/Client: Get() authority returned document for wrong epoch: %v", doc.Epoch)
-		return nil, nil, s11n.ErrInvalidEpoch
+	if len(sigMap) == len(c.cfg.Authorities) {
+		c.log.Notice("OK, received fully signed consensus document.")
+	}
+	if len(sigMap) <= (len(c.cfg.Authorities)/2 + 1) {
+		return nil, nil, fmt.Errorf("voting/client: Get() consensus document not signed by a threshold number of Authorities: %s", err)
+	}
+	id := new(eddsa.PublicKey)
+	for idRaw := range sigMap {
+		id.FromBytes(idRaw[:])
+		doc, _, err := s11n.VerifyAndParseDocument(r.Payload, id)
+		if err != nil {
+			return nil, nil, errors.New("voting/client: Get() impossible signature verification failure.")
+		}
+		if doc.Epoch != epoch {
+			return nil, nil, errors.New("voting/client: Get() consensus document epoch incorrect.")
+		}
+		break
 	}
 	c.log.Debugf("Document: %v", doc)
-
 	return doc, r.Payload, nil
 }
 
