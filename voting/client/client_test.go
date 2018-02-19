@@ -115,7 +115,7 @@ func generateDoc(epoch uint64) ([]byte, error) {
 		return nil, err
 	}
 	targetMix := &pki.MixDescriptor{
-		Name:        "NSA_Spy_Sattelite_Mix001",
+		Name:        "NSA_Spy_Satelite_Mix001",
 		IdentityKey: mixIdentityPrivateKey.PublicKey(),
 		LinkKey:     nil,
 		MixKeys:     nil,
@@ -161,6 +161,7 @@ func generateDoc(epoch uint64) ([]byte, error) {
 		Topology:        topology,
 		Providers:       [][]byte{[]byte{}},
 	}
+
 	signed, err = s11n.MultiSignDocument(mixIdentityPrivateKey, nil, doc)
 	if err != nil {
 		return nil, err
@@ -194,12 +195,13 @@ func (d *mockDialer) waitUntilDialed() {
 	<-d.dialCh
 }
 
-func (d *mockDialer) mockServer(authPrivateKey *ecdh.PrivateKey) {
+func (d *mockDialer) mockServer(linkPrivateKey *ecdh.PrivateKey, identityPrivateKey *eddsa.PrivateKey) {
+	d.log.Debug("MEOW")
 	d.waitUntilDialed()
 	cfg := &wire.SessionConfig{
 		Authenticator:     d,
-		AdditionalData:    nil,
-		AuthenticationKey: authPrivateKey,
+		AdditionalData:    identityPrivateKey.PublicKey().Bytes(),
+		AuthenticationKey: linkPrivateKey,
 		RandomReader:      rand.Reader,
 	}
 	session, err := wire.NewSession(cfg, false)
@@ -225,7 +227,6 @@ func (d *mockDialer) mockServer(authPrivateKey *ecdh.PrivateKey) {
 			d.log.Errorf("mockServer session generateDoc failure: %s", err)
 			return
 		}
-
 		reply := &commands.Consensus{
 			ErrorCode: commands.ConsensusOk,
 			Payload:   rawDoc,
@@ -256,7 +257,7 @@ func TestClient(t *testing.T) {
 	assert.NoError(err, "wtf")
 	peer1LinkPrivateKey := peer1IdentityPrivateKey.ToECDH()
 
-	go dialer.mockServer(peer1LinkPrivateKey)
+	go dialer.mockServer(peer1LinkPrivateKey, peer1IdentityPrivateKey)
 
 	cfg := &Config{
 		LogBackend: logBackend,
@@ -278,6 +279,7 @@ func TestClient(t *testing.T) {
 	epoch, _, _ := epochtime.Now()
 	doc, rawDoc, err := client.Get(ctx, epoch)
 	assert.NoError(err, "wtf")
+	assert.NotNil(doc, "wtf")
 	assert.Equal(doc.Epoch, epoch)
 	t.Logf("rawDoc size is %d", len(rawDoc))
 }

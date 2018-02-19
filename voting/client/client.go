@@ -20,7 +20,6 @@ package client
 import (
 	"bytes"
 	"context"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	//mrand "math/rand"
@@ -52,7 +51,7 @@ type authorityAuthenticator struct {
 // iff the peer is valid.
 func (a *authorityAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 	if !bytes.Equal(a.IdentityPublicKey.Bytes(), creds.AdditionalData) {
-		a.log.Warningf("voting/Client: IsPeerValid(): AD mismatch: %v", hex.EncodeToString(creds.AdditionalData))
+		a.log.Warningf("voting/Client: IsPeerValid(): AD mismatch: %x", creds.AdditionalData[:])
 		return false
 	}
 	if !a.LinkPublicKey.Equal(creds.PublicKey) {
@@ -317,9 +316,14 @@ func (c *client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 
 	// Verify document signatures.
 	doc := &pki.Document{}
+
+	c.log.Debugf("payload is len %d", len(r.Payload))
+	c.log.Debugf("peers is %v", c.cfg.Authorities[0])
+
 	sigMap, err := s11n.VerifyPeerMulti(r.Payload, c.cfg.Authorities)
 	if err != nil {
-		return nil, nil, fmt.Errorf("voting/client: Get() invalid consensus document: %s", err)
+		c.log.Errorf("fufu voting/client: Get() invalid consensus document: %s", err)
+		return nil, nil, fmt.Errorf("fufu voting/client: Get() invalid consensus document: %s", err)
 	}
 	if len(sigMap) == len(c.cfg.Authorities) {
 		c.log.Notice("OK, received fully signed consensus document.")

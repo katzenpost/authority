@@ -102,7 +102,7 @@ func MultiSignDocument(signingKey *eddsa.PrivateKey, peerSignatures map[[eddsa.P
 		Algorithm: jose.EdDSA,
 		Key:       *signingKey.InternalPtr(),
 	}
-	signer, err := jose.NewSigner(k, nil)
+	signer, err := jose.NewMultiSigner([]jose.SigningKey{k}, nil) // XXX multiple signing keys
 	if err != nil {
 		return "", err
 	}
