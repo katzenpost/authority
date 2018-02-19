@@ -184,6 +184,9 @@ func newMockDialer(logBackend *log.Backend) *mockDialer {
 }
 
 func (d *mockDialer) dial(context.Context, string, string) (net.Conn, error) {
+	defer func() {
+		close(d.dialCh)
+	}()
 	return d.clientConn, nil
 }
 
@@ -261,7 +264,7 @@ func TestClient(t *testing.T) {
 			&config.AuthorityPeer{
 				IdentityPublicKey: peer1IdentityPrivateKey.PublicKey(),
 				LinkPublicKey:     peer1LinkPrivateKey.PublicKey(),
-				Addresses:         []string{"127.0.0.1:1234"},
+				Addresses:         []string{"127.0.0.1:1234"}, // not actually using this address at all ;-)
 			},
 		},
 		DialContextFn: dialer.dial,
