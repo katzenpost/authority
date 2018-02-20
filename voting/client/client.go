@@ -50,7 +50,6 @@ type authorityAuthenticator struct {
 // IsPeerValid authenticates the remote peer's credentials, returning true
 // iff the peer is valid.
 func (a *authorityAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
-	a.log.Debugf("id key %x ad %x", a.IdentityPublicKey.Bytes(), creds.AdditionalData)
 	if !bytes.Equal(a.IdentityPublicKey.Bytes(), creds.AdditionalData) {
 		a.log.Warningf("voting/Client: IsPeerValid(): AD mismatch: %x != %x", a.IdentityPublicKey.Bytes(), creds.AdditionalData[:])
 		return false
@@ -231,26 +230,18 @@ type client struct {
 }
 
 func (c *client) Post(ctx context.Context, epoch uint64, signingKey *eddsa.PrivateKey, d *pki.MixDescriptor) error {
-	c.log.Debugf("Post(ctx, %d, %v, %+v)", epoch, signingKey.PublicKey(), d)
-
 	// Ensure that the descriptor we are about to post is well formed.
 	if err := s11n.IsDescriptorWellFormed(d, epoch); err != nil {
 		return err
 	}
-
 	// Make a serialized + signed + serialized descriptor.
 	signed, err := s11n.SignDescriptor(signingKey, d)
 	if err != nil {
 		return err
 	}
-	c.log.Debugf("Signed descriptor: '%v'", signed)
-
 	// Convert the link key to an ECDH keypair.
 	linkKey := signingKey.ToECDH()
 	defer linkKey.Reset()
-
-	// Initialize the TCP/IP connection, and wire session.
-
 	// Dispatch the post_descriptor command.
 	cmd := &commands.PostDescriptor{
 		Epoch:   epoch,
@@ -260,7 +251,6 @@ func (c *client) Post(ctx context.Context, epoch uint64, signingKey *eddsa.Priva
 	if err != nil {
 		return err
 	}
-
 	// Parse the post_descriptor_status command.
 	errs := []error{}
 	for _, resp := range responses {
@@ -282,7 +272,6 @@ func (c *client) Post(ctx context.Context, epoch uint64, signingKey *eddsa.Priva
 	} else {
 		return fmt.Errorf("failure to Post to %d Directory Authorities", len(errs))
 	}
-
 	// NOTREACHED
 }
 
@@ -323,9 +312,6 @@ func (c *client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 	// Verify document signatures.
 	doc := &pki.Document{}
 
-	c.log.Debugf("payload is len %d", len(r.Payload))
-	c.log.Debugf("peers is %v", c.cfg.Authorities[0])
-
 	sigMap, err := s11n.VerifyPeerMulti(r.Payload, c.cfg.Authorities)
 	if err != nil {
 		c.log.Errorf("fufu voting/client: Get() invalid consensus document: %s", err)
@@ -337,11 +323,10 @@ func (c *client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 	if len(sigMap) <= (len(c.cfg.Authorities)/2 + 1) {
 		return nil, nil, fmt.Errorf("voting/client: Get() consensus document not signed by a threshold number of Authorities: %s", err)
 	}
-	c.log.Debugf("<<-- sigMap len is %d", len(sigMap))
 	id := new(eddsa.PublicKey)
 	for idRaw := range sigMap {
 		id.FromBytes(idRaw[:])
-		doc, _, err := s11n.VerifyAndParseDocument(r.Payload, id)
+		doc, _, err = s11n.VerifyAndParseDocument(r.Payload, id)
 		if err != nil {
 			return nil, nil, fmt.Errorf("voting/client: Get() impossible signature verification failure: %s", err)
 		}
@@ -350,7 +335,6 @@ func (c *client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 		}
 		break
 	}
-	c.log.Debugf("Document: %v", doc)
 	return doc, r.Payload, nil
 }
 

@@ -193,8 +193,7 @@ func generateMixnet(numMixes, numProviders int, epoch uint64) (*s11n.Document, e
 	for _, p := range providers {
 		providersRaw = append(providersRaw, p.raw)
 	}
-	nodes := append(mixes, providers...)
-	topology := generateRandomTopology(nodes, 3)
+	topology := generateRandomTopology(mixes, 3)
 	doc := &s11n.Document{
 		Version:         "voting-document-v0",
 		Epoch:           epoch,
@@ -261,7 +260,6 @@ func (d *mockDialer) waitUntilDialed(address string) {
 }
 
 func (d *mockDialer) mockServer(address string, linkPrivateKey *ecdh.PrivateKey, identityPrivateKey *eddsa.PrivateKey) {
-	d.log.Debug("starting mockServer...")
 	clientConn, serverConn := net.Pipe()
 	d.netMap[address] = &conn{
 		serverConn: serverConn,
@@ -347,8 +345,6 @@ func TestClient(t *testing.T) {
 		peer, idPrivKey, linkPrivKey, err := generatePeer(i)
 		require.NoError(err, "wtf")
 		peers = append(peers, peer)
-		t.Logf("peer identity private key: %x", idPrivKey.Bytes())
-		t.Logf("peer identity public key: %x", idPrivKey.PublicKey().Bytes())
 		go dialer.mockServer(peer.Addresses[0], linkPrivKey, idPrivKey)
 	}
 	cfg := &Config{
@@ -364,6 +360,6 @@ func TestClient(t *testing.T) {
 	doc, rawDoc, err := client.Get(ctx, epoch)
 	require.NoError(err, "wtf")
 	require.NotNil(doc, "wtf")
-	require.Equal(doc.Epoch, epoch)
+	require.Equal(epoch, doc.Epoch)
 	t.Logf("rawDoc size is %d", len(rawDoc))
 }
