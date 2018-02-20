@@ -341,7 +341,7 @@ func TestClient(t *testing.T) {
 	require.NoError(err, "wtf")
 	dialer := newMockDialer(logBackend)
 	peers := []*config.AuthorityPeer{}
-	for i := 0; i < 30; i++ {
+	for i := 0; i < 10; i++ {
 		peer, idPrivKey, linkPrivKey, err := generatePeer(i)
 		require.NoError(err, "wtf")
 		peers = append(peers, peer)
