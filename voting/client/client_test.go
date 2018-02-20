@@ -19,6 +19,7 @@ package client
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"testing"
 	"time"
@@ -34,7 +35,7 @@ import (
 	"github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/wire/commands"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gopkg.in/op/go-logging.v1"
 )
 
@@ -169,35 +170,53 @@ func generateDoc(epoch uint64) ([]byte, error) {
 	return []byte(signed), nil
 }
 
-type mockDialer struct {
+type conn struct {
 	serverConn net.Conn
 	clientConn net.Conn
 	dialCh     chan interface{}
-	log        *logging.Logger
+}
+
+//d.dialCh =
+
+type mockDialer struct {
+	netMap map[string]*conn
+	log    *logging.Logger
 }
 
 func newMockDialer(logBackend *log.Backend) *mockDialer {
 	d := new(mockDialer)
-	d.serverConn, d.clientConn = net.Pipe()
-	d.dialCh = make(chan interface{}, 0)
+	d.netMap = make(map[string]*conn)
+
 	d.log = logBackend.GetLogger("mockDialer: ")
 	return d
 }
 
-func (d *mockDialer) dial(context.Context, string, string) (net.Conn, error) {
+func (d *mockDialer) dial(ctx context.Context, network string, address string) (net.Conn, error) {
 	defer func() {
-		close(d.dialCh)
+		close(d.netMap[address].dialCh)
 	}()
-	return d.clientConn, nil
+	d.log.Debug("MOCK DIAL %s", address)
+	return d.netMap[address].clientConn, nil
 }
 
-func (d *mockDialer) waitUntilDialed() {
-	<-d.dialCh
+func (d *mockDialer) waitUntilDialed(address string) {
+	if _, ok := d.netMap[address]; !ok {
+		d.log.Errorf("address %s not found in mockDialer netMap", address)
+		return
+	}
+	<-d.netMap[address].dialCh
 }
 
-func (d *mockDialer) mockServer(linkPrivateKey *ecdh.PrivateKey, identityPrivateKey *eddsa.PrivateKey) {
+func (d *mockDialer) mockServer(address string, linkPrivateKey *ecdh.PrivateKey, identityPrivateKey *eddsa.PrivateKey) {
 	d.log.Debug("starting mockServer...")
-	d.waitUntilDialed()
+	clientConn, serverConn := net.Pipe()
+	d.netMap[address] = &conn{
+		serverConn: serverConn,
+		clientConn: clientConn,
+		dialCh:     make(chan interface{}, 0),
+	}
+
+	d.waitUntilDialed(address)
 	cfg := &wire.SessionConfig{
 		Authenticator:     d,
 		AdditionalData:    identityPrivateKey.PublicKey().Bytes(),
@@ -210,7 +229,7 @@ func (d *mockDialer) mockServer(linkPrivateKey *ecdh.PrivateKey, identityPrivate
 		return
 	}
 	defer session.Close()
-	err = session.Initialize(d.serverConn)
+	err = session.Initialize(d.netMap[address].serverConn)
 	if err != nil {
 		d.log.Errorf("mockServer session Initialize failure: %s", err)
 		return
@@ -246,7 +265,7 @@ func (d *mockDialer) IsPeerValid(creds *wire.PeerCredentials) bool {
 	return true
 }
 
-func generatePeer() (*config.AuthorityPeer, *eddsa.PrivateKey, *ecdh.PrivateKey, error) {
+func generatePeer(peerNum int) (*config.AuthorityPeer, *eddsa.PrivateKey, *ecdh.PrivateKey, error) {
 	identityPrivateKey, err := eddsa.NewKeypair(rand.Reader)
 	if err != nil {
 		return nil, nil, nil, err
@@ -255,40 +274,38 @@ func generatePeer() (*config.AuthorityPeer, *eddsa.PrivateKey, *ecdh.PrivateKey,
 	return &config.AuthorityPeer{
 		IdentityPublicKey: identityPrivateKey.PublicKey(),
 		LinkPublicKey:     linkPrivateKey.PublicKey(),
-		Addresses:         []string{"127.0.0.1:1234"}, // not actually using this address at all ;-)
+		Addresses:         []string{fmt.Sprintf("127.0.0.1:%d", peerNum)},
 	}, identityPrivateKey, linkPrivateKey, nil
 }
 
 func TestClient(t *testing.T) {
-	assert := assert.New(t)
+	require := require.New(t)
 
 	logBackend, err := log.New("", "DEBUG", false)
-	assert.NoError(err, "wtf")
+	require.NoError(err, "wtf")
 	dialer := newMockDialer(logBackend)
-
 	peers := []*config.AuthorityPeer{}
 	for i := 0; i < 10; i++ {
-		peer, idPrivKey, linkPrivKey, err := generatePeer()
-		assert.NoError(err, "wtf")
+		peer, idPrivKey, linkPrivKey, err := generatePeer(i)
+		require.NoError(err, "wtf")
 		peers = append(peers, peer)
-		go dialer.mockServer(linkPrivKey, idPrivKey)
+		t.Logf("peer identity private key: %x", idPrivKey.Bytes())
+		t.Logf("peer identity public key: %x", idPrivKey.PublicKey().Bytes())
+		go dialer.mockServer(peer.Addresses[0], linkPrivKey, idPrivKey)
 	}
-
 	cfg := &Config{
 		LogBackend:    logBackend,
 		Authorities:   peers,
 		DialContextFn: dialer.dial,
 	}
 	client, err := New(cfg)
-	assert.NoError(err, "wtf")
-
+	require.NoError(err, "wtf")
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
-
 	epoch, _, _ := epochtime.Now()
 	doc, rawDoc, err := client.Get(ctx, epoch)
-	assert.NoError(err, "wtf")
-	assert.NotNil(doc, "wtf")
-	assert.Equal(doc.Epoch, epoch)
+	require.NoError(err, "wtf")
+	require.NotNil(doc, "wtf")
+	require.Equal(doc.Epoch, epoch)
 	t.Logf("rawDoc size is %d", len(rawDoc))
 }

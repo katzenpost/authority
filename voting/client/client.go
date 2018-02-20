@@ -50,12 +50,13 @@ type authorityAuthenticator struct {
 // IsPeerValid authenticates the remote peer's credentials, returning true
 // iff the peer is valid.
 func (a *authorityAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
+	a.log.Debugf("id key %x ad %x", a.IdentityPublicKey.Bytes(), creds.AdditionalData)
 	if !bytes.Equal(a.IdentityPublicKey.Bytes(), creds.AdditionalData) {
-		a.log.Warningf("voting/Client: IsPeerValid(): AD mismatch: %x", creds.AdditionalData[:])
+		a.log.Warningf("voting/Client: IsPeerValid(): AD mismatch: %x != %x", a.IdentityPublicKey.Bytes(), creds.AdditionalData[:])
 		return false
 	}
 	if !a.LinkPublicKey.Equal(creds.PublicKey) {
-		a.log.Warningf("voting/Client: IsPeerValid(): Link Public Key mismatch: %v", creds.PublicKey)
+		a.log.Warningf("voting/Client: IsPeerValid(): Link Public Key mismatch: %v != %v", a.LinkPublicKey, creds.PublicKey)
 		return false
 	}
 	return true
@@ -132,6 +133,8 @@ func (p *connectionPool) initSession(ctx context.Context, doneCh <-chan interfac
 	var ad []byte
 	if signingKey != nil {
 		ad = signingKey.Bytes()
+	} else {
+		p.log.Debug("signingKey is nil")
 	}
 
 	peerAuthenticator := &authorityAuthenticator{
