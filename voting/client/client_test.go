@@ -147,13 +147,16 @@ func generateNodes(isProvider bool, num int, epoch uint64) ([]*descriptor, error
 			return nil, err
 		}
 		var layer uint8
+		var name string
 		if isProvider {
 			layer = pki.LayerProvider
+			name = fmt.Sprintf("NSA_Spy_Satelite_Provider%d", i)
 		} else {
 			layer = 0
+			name = fmt.Sprintf("NSA_Spy_Satelite_Mix%d", i)
 		}
 		mix := &pki.MixDescriptor{
-			Name:        fmt.Sprintf("NSA_Spy_Satelite_Mix%d", i),
+			Name:        name,
 			IdentityKey: mixIdentityPrivateKey.PublicKey(),
 			LinkKey:     mixIdentityPrivateKey.PublicKey().ToECDH(),
 			MixKeys:     mixKeys,
@@ -190,8 +193,7 @@ func generateMixnet(numMixes, numProviders int, epoch uint64) (*s11n.Document, e
 	for _, p := range providers {
 		providersRaw = append(providersRaw, p.raw)
 	}
-	nodes := mixes
-	nodes = append(nodes, providers...)
+	nodes := append(mixes, providers...)
 	topology := generateRandomTopology(nodes, 3)
 	doc := &s11n.Document{
 		Version:         "voting-document-v0",
@@ -209,8 +211,8 @@ func generateMixnet(numMixes, numProviders int, epoch uint64) (*s11n.Document, e
 
 func generateDoc(epoch uint64, signingKeys []*eddsa.PrivateKey) ([]byte, error) {
 	// XXX
-	numMixes := len(signingKeys) / 2
-	numProviders := len(signingKeys) / 2
+	numMixes := len(signingKeys) - 2
+	numProviders := 2
 	doc, err := generateMixnet(numMixes, numProviders, epoch)
 	if err != nil {
 		return nil, err
@@ -341,7 +343,7 @@ func TestClient(t *testing.T) {
 	require.NoError(err, "wtf")
 	dialer := newMockDialer(logBackend)
 	peers := []*config.AuthorityPeer{}
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 30; i++ {
 		peer, idPrivKey, linkPrivKey, err := generatePeer(i)
 		require.NoError(err, "wtf")
 		peers = append(peers, peer)
