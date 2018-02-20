@@ -209,7 +209,10 @@ func (p *connectionPool) randomPeerRoundTrip(ctx context.Context, linkKey *ecdh.
 	//peerIndex := mrand.Intn(len(p.cfg.Authorities) - 1)
 	peerIndex := 0
 
-	fmt.Printf("blah test: %v", p.cfg)
+	if len(p.cfg.Authorities) == 0 {
+		return nil, errors.New("error: zero Authorities specified in configuration")
+	}
+
 	conn, err := p.initSession(ctx, doneCh, linkKey, nil, p.cfg.Authorities[peerIndex])
 	if err != nil {
 		return nil, err

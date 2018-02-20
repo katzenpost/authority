@@ -134,8 +134,6 @@ func VerifyPeerMulti(payload []byte, peers []*config.AuthorityPeer) (map[[eddsa.
 		_, signature, _, err := signed.VerifyMulti(*peer.IdentityPublicKey.InternalPtr())
 		if err == nil {
 			sigMap[peer.IdentityPublicKey.ByteArray()] = &signature
-		} else {
-			return nil, fmt.Errorf("VerifyPeerMulti failure: %s", err)
 		}
 	}
 	return sigMap, nil

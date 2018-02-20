@@ -196,7 +196,7 @@ func (d *mockDialer) waitUntilDialed() {
 }
 
 func (d *mockDialer) mockServer(linkPrivateKey *ecdh.PrivateKey, identityPrivateKey *eddsa.PrivateKey) {
-	d.log.Debug("MEOW")
+	d.log.Debug("starting mockServer...")
 	d.waitUntilDialed()
 	cfg := &wire.SessionConfig{
 		Authenticator:     d,
@@ -246,6 +246,19 @@ func (d *mockDialer) IsPeerValid(creds *wire.PeerCredentials) bool {
 	return true
 }
 
+func generatePeer() (*config.AuthorityPeer, *eddsa.PrivateKey, *ecdh.PrivateKey, error) {
+	identityPrivateKey, err := eddsa.NewKeypair(rand.Reader)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	linkPrivateKey := identityPrivateKey.ToECDH()
+	return &config.AuthorityPeer{
+		IdentityPublicKey: identityPrivateKey.PublicKey(),
+		LinkPublicKey:     linkPrivateKey.PublicKey(),
+		Addresses:         []string{"127.0.0.1:1234"}, // not actually using this address at all ;-)
+	}, identityPrivateKey, linkPrivateKey, nil
+}
+
 func TestClient(t *testing.T) {
 	assert := assert.New(t)
 
@@ -253,21 +266,17 @@ func TestClient(t *testing.T) {
 	assert.NoError(err, "wtf")
 	dialer := newMockDialer(logBackend)
 
-	peer1IdentityPrivateKey, err := eddsa.NewKeypair(rand.Reader)
-	assert.NoError(err, "wtf")
-	peer1LinkPrivateKey := peer1IdentityPrivateKey.ToECDH()
-
-	go dialer.mockServer(peer1LinkPrivateKey, peer1IdentityPrivateKey)
+	peers := []*config.AuthorityPeer{}
+	for i := 0; i < 10; i++ {
+		peer, idPrivKey, linkPrivKey, err := generatePeer()
+		assert.NoError(err, "wtf")
+		peers = append(peers, peer)
+		go dialer.mockServer(linkPrivKey, idPrivKey)
+	}
 
 	cfg := &Config{
-		LogBackend: logBackend,
-		Authorities: []*config.AuthorityPeer{
-			&config.AuthorityPeer{
-				IdentityPublicKey: peer1IdentityPrivateKey.PublicKey(),
-				LinkPublicKey:     peer1LinkPrivateKey.PublicKey(),
-				Addresses:         []string{"127.0.0.1:1234"}, // not actually using this address at all ;-)
-			},
-		},
+		LogBackend:    logBackend,
+		Authorities:   peers,
 		DialContextFn: dialer.dial,
 	}
 	client, err := New(cfg)
