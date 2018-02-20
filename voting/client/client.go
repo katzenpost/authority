@@ -337,12 +337,13 @@ func (c *client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 	if len(sigMap) <= (len(c.cfg.Authorities)/2 + 1) {
 		return nil, nil, fmt.Errorf("voting/client: Get() consensus document not signed by a threshold number of Authorities: %s", err)
 	}
+	c.log.Debugf("<<-- sigMap len is %d", len(sigMap))
 	id := new(eddsa.PublicKey)
 	for idRaw := range sigMap {
 		id.FromBytes(idRaw[:])
 		doc, _, err := s11n.VerifyAndParseDocument(r.Payload, id)
 		if err != nil {
-			return nil, nil, errors.New("voting/client: Get() impossible signature verification failure.")
+			return nil, nil, fmt.Errorf("voting/client: Get() impossible signature verification failure: %s", err)
 		}
 		if doc.Epoch != epoch {
 			return nil, nil, errors.New("voting/client: Get() consensus document epoch incorrect.")

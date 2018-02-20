@@ -44,6 +44,19 @@ type descriptor struct {
 	raw  []byte
 }
 
+func generateRandomTopology(nodes []*descriptor, layers int) [][][]byte {
+	rng := rand.NewMath()
+	nodeIndexes := rng.Perm(len(nodes))
+	topology := make([][][]byte, layers)
+	for idx, layer := 0, 0; idx < len(nodes); idx++ {
+		n := nodes[nodeIndexes[idx]]
+		topology[layer] = append(topology[layer], n.raw)
+		layer++
+		layer = layer % len(topology)
+	}
+	return topology
+}
+
 func generateTopology(nodeList []*descriptor, doc *pki.Document, layers int) [][][]byte {
 	nodeMap := make(map[[constants.NodeIDLength]byte]*descriptor)
 	for _, v := range nodeList {
@@ -110,60 +123,99 @@ func generateTopology(nodeList []*descriptor, doc *pki.Document, layers int) [][
 	return topology
 }
 
-func generateDoc(epoch uint64) ([]byte, error) {
-	mixIdentityPrivateKey, err := eddsa.NewKeypair(rand.Reader)
-	if err != nil {
-		return nil, err
+func generateMixKeys(epoch uint64) (map[uint64]*ecdh.PublicKey, error) {
+	m := make(map[uint64]*ecdh.PublicKey)
+	for i := epoch; i < epoch+3; i++ {
+		privatekey, err := ecdh.NewKeypair(rand.Reader)
+		if err != nil {
+			return nil, err
+		}
+		m[uint64(i)] = privatekey.PublicKey()
 	}
-	targetMix := &pki.MixDescriptor{
-		Name:        "NSA_Spy_Satelite_Mix001",
-		IdentityKey: mixIdentityPrivateKey.PublicKey(),
-		LinkKey:     nil,
-		MixKeys:     nil,
-		Addresses:   nil,
-		Kaetzchen:   nil,
-		Layer:       1,
-		LoadWeight:  0,
-	}
-	pdoc := &pki.Document{
-		Epoch:           epoch,
-		MixLambda:       3.141,
-		MixMaxDelay:     3,
-		SendLambda:      2.6,
-		SendShift:       2,
-		SendMaxInterval: 42,
-		Topology: [][]*pki.MixDescriptor{
-			[]*pki.MixDescriptor{
-				targetMix,
-			},
-		},
-		Providers: []*pki.MixDescriptor{
-			targetMix,
-		},
-	}
-	signed, err := s11n.SignDescriptor(mixIdentityPrivateKey, targetMix)
-	if err != nil {
-		return nil, err
-	}
-	nodeList := []*descriptor{
-		&descriptor{
-			raw:  []byte(signed),
-			desc: targetMix,
-		},
-	}
-	topology := generateTopology(nodeList, pdoc, 3)
-	doc := &s11n.Document{
-		Epoch:           epoch,
-		MixLambda:       3.141,
-		MixMaxDelay:     3,
-		SendLambda:      2.6,
-		SendShift:       2,
-		SendMaxInterval: 42,
-		Topology:        topology,
-		Providers:       [][]byte{[]byte{}},
-	}
+	return m, nil
+}
 
-	signed, err = s11n.MultiSignDocument(mixIdentityPrivateKey, nil, doc)
+func generateNodes(isProvider bool, num int, epoch uint64) ([]*descriptor, error) {
+	mixes := []*descriptor{}
+	for i := 0; i < num; i++ {
+		mixIdentityPrivateKey, err := eddsa.NewKeypair(rand.Reader)
+		if err != nil {
+			return nil, err
+		}
+		mixKeys, err := generateMixKeys(epoch)
+		if err != nil {
+			return nil, err
+		}
+		var layer uint8
+		if isProvider {
+			layer = pki.LayerProvider
+		} else {
+			layer = 0
+		}
+		mix := &pki.MixDescriptor{
+			Name:        fmt.Sprintf("NSA_Spy_Satelite_Mix%d", i),
+			IdentityKey: mixIdentityPrivateKey.PublicKey(),
+			LinkKey:     mixIdentityPrivateKey.PublicKey().ToECDH(),
+			MixKeys:     mixKeys,
+			Addresses: map[pki.Transport][]string{
+				pki.Transport("tcp4"): []string{fmt.Sprintf("127.0.0.1:%d", i+1)},
+			},
+			Kaetzchen:  nil,
+			Layer:      layer,
+			LoadWeight: 0,
+		}
+		signed, err := s11n.SignDescriptor(mixIdentityPrivateKey, mix)
+		if err != nil {
+			return nil, err
+		}
+		desc := &descriptor{
+			raw:  []byte(signed),
+			desc: mix,
+		}
+		mixes = append(mixes, desc)
+	}
+	return mixes, nil
+}
+
+func generateMixnet(numMixes, numProviders int, epoch uint64) (*s11n.Document, error) {
+	mixes, err := generateNodes(false, numMixes, epoch)
+	if err != nil {
+		return nil, err
+	}
+	providers, err := generateNodes(true, numProviders, epoch)
+	if err != nil {
+		return nil, err
+	}
+	providersRaw := [][]byte{}
+	for _, p := range providers {
+		providersRaw = append(providersRaw, p.raw)
+	}
+	nodes := mixes
+	nodes = append(nodes, providers...)
+	topology := generateRandomTopology(nodes, 3)
+	doc := &s11n.Document{
+		Version:         "voting-document-v0",
+		Epoch:           epoch,
+		MixLambda:       0.25,
+		MixMaxDelay:     4000,
+		SendLambda:      1.2,
+		SendShift:       3,
+		SendMaxInterval: 300,
+		Topology:        topology,
+		Providers:       providersRaw,
+	}
+	return doc, nil
+}
+
+func generateDoc(epoch uint64, signingKeys []*eddsa.PrivateKey) ([]byte, error) {
+	// XXX
+	numMixes := len(signingKeys) / 2
+	numProviders := len(signingKeys) / 2
+	doc, err := generateMixnet(numMixes, numProviders, epoch)
+	if err != nil {
+		return nil, err
+	}
+	signed, err := s11n.MultiSignTestDocument(signingKeys, doc)
 	if err != nil {
 		return nil, err
 	}
@@ -174,9 +226,8 @@ type conn struct {
 	serverConn net.Conn
 	clientConn net.Conn
 	dialCh     chan interface{}
+	signingKey *eddsa.PrivateKey
 }
-
-//d.dialCh =
 
 type mockDialer struct {
 	netMap map[string]*conn
@@ -214,6 +265,7 @@ func (d *mockDialer) mockServer(address string, linkPrivateKey *ecdh.PrivateKey,
 		serverConn: serverConn,
 		clientConn: clientConn,
 		dialCh:     make(chan interface{}, 0),
+		signingKey: identityPrivateKey,
 	}
 
 	d.waitUntilDialed(address)
@@ -241,7 +293,11 @@ func (d *mockDialer) mockServer(address string, linkPrivateKey *ecdh.PrivateKey,
 	}
 	switch c := cmd.(type) {
 	case *commands.GetConsensus:
-		rawDoc, err := generateDoc(c.Epoch)
+		signingKeys := []*eddsa.PrivateKey{}
+		for _, v := range d.netMap {
+			signingKeys = append(signingKeys, v.signingKey)
+		}
+		rawDoc, err := generateDoc(c.Epoch, signingKeys)
 		if err != nil {
 			d.log.Errorf("mockServer session generateDoc failure: %s", err)
 			return
