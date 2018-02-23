@@ -999,7 +999,7 @@ func newState(s *Server) (*state, error) {
 	st.authorizedAuthorities = make(map[[eddsa.PublicKeySize]byte]bool)
 	for _, v := range st.s.cfg.Authorities {
 		pk := v.IdentityPublicKey.ByteArray()
-		st.authorizedMixes[pk] = true
+		st.authorizedAuthorities[pk] = true
 	}
 
 	st.documents = make(map[uint64]*document)
