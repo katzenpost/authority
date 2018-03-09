@@ -50,6 +50,7 @@ const (
 	stateAcceptDescriptor    = "accept_desc"
 	stateAcceptVote          = "accept_vote"
 	stateAcceptSignature     = "accept_signature"
+	stateBootstrap           = "bootstrap"
 )
 
 var (
@@ -145,23 +146,13 @@ func (s *state) onUpdate() {
 }
 
 func (s *state) worker() {
-	const wakeInterval = 60 * time.Second
-
-	t := time.NewTicker(wakeInterval)
-	defer func() {
-		t.Stop()
-		s.log.Debugf("Halting worker.")
-	}()
-
 	for {
 		select {
 		case <-s.HaltCh():
-			s.log.Debugf("Terminating gracefully.")
+			s.log.Debugf("authority: Terminating gracefully.")
 			return
-		case <-s.updateCh:
-			s.log.Debugf("Wakeup due to descriptor upload.")
 		case <-s.fsmWakeup():
-			s.log.Debugf("Wakeup due to voting schedule.")
+			s.log.Debugf("authority: Wakeup due to voting schedule.")
 		}
 		s.fsm()
 	}
@@ -170,7 +161,14 @@ func (s *state) worker() {
 func (s *state) fsmWakeup() <-chan time.Time {
 	s.Lock()
 	defer s.Unlock()
+
 	_, elapsed, next_epoch := epochtime.Now()
+	// if we're bootstrapping, hurry things up
+	if s.doBootstrap() {
+		s.log.Debugf("authority: Bootstrapping, hurrying things up...")
+		return time.After(30 * time.Second)
+	}
+
 	switch {
 	case s.state == stateAcceptDescriptor:
 		return time.After(authorityVoteDeadline - elapsed)
@@ -188,95 +186,47 @@ func (s *state) fsm() {
 	defer s.Unlock()
 	switch {
 	case s.state == stateAcceptDescriptor:
+		if s.doBootstrap() && !s.hasEnoughDescriptors(s.descriptors[s.votingEpoch]) {
+			s.log.Debugf("authority: not voting because insufficient descriptors uploaded!")
+			return
+		} else {
+			s.log.Debugf("authority: voting!")
+		}
 		s.state = stateAcceptVote
 		if !s.voted(s.votingEpoch) {
+			s.log.Debugf("Voting for epoch %v", s.votingEpoch)
 			s.vote(s.votingEpoch)
 		}
 	case s.state == stateAcceptVote:
 		s.state = stateAcceptSignature
 		if !s.isTabulated(s.votingEpoch) {
+			s.log.Debugf("Tabulating for epoch %v", s.votingEpoch)
 			s.tabulate(s.votingEpoch)
 		}
-
 	case s.state == stateAcceptSignature:
 		s.state = stateAcceptDescriptor
+		s.votingEpoch = s.votingEpoch + 1
 		if !s.hasConsensus(s.votingEpoch) {
+			s.log.Debugf("Combing signatures for epoch %v", s.votingEpoch)
 			s.combine(s.votingEpoch)
 		}
 	default:
 		s.state = stateAcceptDescriptor
 	}
+	s.log.Debugf("authority: FSM in state %v", s.state)
+	s.pruneDocuments()
 }
 
-func (s *state) onWakeup() {
-	epoch, elapsed, _ := epochtime.Now()
-
-	s.Lock()
-	defer s.Unlock()
+func (s *state) doBootstrap() bool {
+	// lock must already be held!
+	epoch, _, _ := epochtime.Now()
 
 	// If we are doing a bootstrap, and we don't have a document, attempt
 	// to generate one for the current epoch regardless of the time.
 	if epoch == s.bootstrapEpoch && s.documents[epoch] == nil {
-		// The bootstrap phase will accelerate the voting schedule for the current
-		// epoch if there is no existing consensus for the current epoch AND it
-		// receives descriptor uploads for *ALL* nodes it knows about (eg: Test setups).
-		s.votingEpoch = epoch
-		nrBootstrapDescs := len(s.authorizedMixes) + len(s.authorizedProviders)
-		m, ok := s.descriptors[epoch]
-		if ok && len(m) == nrBootstrapDescs {
-			s.log.Debugf("authority: Bootstrapping... Consensus schedule advanced.")
-			s.log.Debugf("authority: voting on epoch: %v", s.votingEpoch)
-			// current epoch is about to change, so abort and vote on next epoch
-			s.log.Debugf("authority: elapsed: %v", elapsed)
-			s.log.Debugf("authority: publishDeadline: %v", publishDeadline)
-			s.log.Debugf("authority: mixPublishDeadline: %v", mixPublishDeadline)
-			s.log.Debugf("authority: authorityVoteDeadline: %v", authorityVoteDeadline)
-			s.log.Debugf("authority: publishConsensusDeadline: %v", publishConsensusDeadline)
-		} else {
-			s.log.Debugf("authority: Not enough descriptors.")
-			nrMixes := 0
-			nrProviders := 0
-			for _, d := range m {
-				id := d.desc.IdentityKey.ByteArray()
-				if _, ok := s.authorizedProviders[id]; ok {
-					nrProviders++
-				}
-				if _, ok := s.authorizedMixes[id]; ok {
-					nrMixes++
-				}
-			}
-			s.log.Debugf("authority: Received %v of %v Mixes.", nrMixes, len(s.authorizedMixes))
-			s.log.Debugf("authority: Received %v of %v Providers.", nrProviders, len(s.authorizedProviders))
-			return
-		}
-	} else if epoch == s.votingEpoch {
-		s.votingEpoch = epoch + 1
+		return true
 	}
-	// If it is past the descriptor upload period and we have yet to generate a
-	// document for the *next* epoch, generate a document and send it to all
-	// of the other Directory Authorities.
-	if elapsed > mixPublishDeadline && elapsed < authorityVoteDeadline {
-		if !s.voted(s.votingEpoch) {
-			s.vote(s.votingEpoch)
-		}
-	}
-	// If it is now past the voting deadline, and before the consensus
-	// has been published, send a signature to the other authorities
-	// of the document this authority believes will be the consensus
-	if elapsed > authorityVoteDeadline && elapsed < publishConsensusDeadline {
-		if !s.isTabulated(s.votingEpoch) {
-			s.tabulate(s.votingEpoch)
-		}
-	}
-	// we should now have received enough signatures to make consensus.
-	if elapsed > publishConsensusDeadline {
-		// XXX do this once, not repeatedly until consensus is reached or next epoch
-		if !s.hasConsensus(s.votingEpoch) {
-			s.combine(s.votingEpoch)
-		}
-	}
-	// Purge overly stale documents.
-	s.pruneDocuments()
+	return false
 }
 
 func (s *state) combine(epoch uint64) {
@@ -1098,6 +1048,8 @@ func newState(s *Server) (*state, error) {
 	epoch, _, _ := epochtime.Now()
 	if _, ok := st.documents[epoch]; !ok {
 		st.bootstrapEpoch = epoch
+		st.votingEpoch = epoch
+		st.state = stateBootstrap
 	}
 
 	st.Go(st.worker)
