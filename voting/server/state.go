@@ -41,8 +41,15 @@ import (
 )
 
 const (
-	descriptorsBucket = "descriptors"
-	documentsBucket   = "documents"
+	descriptorsBucket        = "descriptors"
+	documentsBucket          = "documents"
+	publishDeadline          = 3600 * time.Second
+	mixPublishDeadline       = 2 * time.Hour
+	authorityVoteDeadline    = 2*time.Hour + 7*time.Minute + 30*time.Second
+	publishConsensusDeadline = 2*time.Hour + 15*time.Minute
+	stateAcceptDescriptor    = "accept_desc"
+	stateAcceptVote          = "accept_vote"
+	stateAcceptSignature     = "accept_signature"
 )
 
 var (
@@ -117,6 +124,7 @@ type state struct {
 
 	votingEpoch uint64
 	threshold   int
+	state string
 }
 
 func (s *state) Halt() {
@@ -152,20 +160,55 @@ func (s *state) worker() {
 			return
 		case <-s.updateCh:
 			s.log.Debugf("Wakeup due to descriptor upload.")
-		case <-t.C:
-			s.log.Debugf("Wakeup due to periodic timer.")
+		case <-s.fsmWakeup():
+			s.log.Debugf("Wakeup due to voting schedule.")
+		}
+		s.fsm()
+	}
+}
+
+func (s *state) fsmWakeup() <-chan time.Time {
+	s.Lock()
+	defer s.Unlock()
+	_, elapsed, next_epoch := epochtime.Now()
+	switch {
+	case s.state == stateAcceptDescriptor:
+		return time.After(authorityVoteDeadline - elapsed)
+	case s.state == stateAcceptVote:
+		return time.After(publishConsensusDeadline - elapsed)
+	case s.state == stateAcceptSignature:
+		return time.After(next_epoch)
+	default:
+		return time.After(mixPublishDeadline - elapsed)
+	}
+}
+
+func (s *state) fsm() {
+	s.Lock()
+	defer s.Unlock()
+	switch {
+	case s.state == stateAcceptDescriptor:
+		s.state = stateAcceptVote
+		if !s.voted(s.votingEpoch) {
+			s.vote(s.votingEpoch)
+		}
+	case s.state == stateAcceptVote:
+		s.state = stateAcceptSignature
+		if !s.isTabulated(s.votingEpoch) {
+			s.tabulate(s.votingEpoch)
 		}
 
-		// Generate the document(s) if enough descriptors are uploaded.
-		s.onWakeup()
+	case s.state == stateAcceptSignature:
+		s.state = stateAcceptDescriptor
+		if !s.hasConsensus(s.votingEpoch) {
+			s.combine(s.votingEpoch)
+		}
+	default:
+		s.state = stateAcceptDescriptor
 	}
 }
 
 func (s *state) onWakeup() {
-	publishDeadline := 3600 * time.Second
-	mixPublishDeadline := 2 * time.Hour
-	authorityVoteDeadline := 2*time.Hour + 7*time.Minute + 30*time.Second
-	publishConsensusDeadline := 2*time.Hour + 15*time.Minute
 	epoch, elapsed, _ := epochtime.Now()
 
 	s.Lock()
@@ -181,20 +224,9 @@ func (s *state) onWakeup() {
 		nrBootstrapDescs := len(s.authorizedMixes) + len(s.authorizedProviders)
 		m, ok := s.descriptors[epoch]
 		if ok && len(m) == nrBootstrapDescs {
-			warp_factor := uint(5)
 			s.log.Debugf("authority: Bootstrapping... Consensus schedule advanced.")
 			s.log.Debugf("authority: voting on epoch: %v", s.votingEpoch)
-			publishDeadline = publishDeadline >> warp_factor
 			// current epoch is about to change, so abort and vote on next epoch
-			bootstrap_time := 3 * time.Hour >> warp_factor
-			if elapsed / bootstrap_time ==  3 * time.Hour / bootstrap_time {
-				s.bootstrapEpoch = epoch + 1
-				return
-			}
-			elapsed = elapsed % (3 * time.Hour >> warp_factor)
-			mixPublishDeadline = mixPublishDeadline >> warp_factor
-			authorityVoteDeadline = authorityVoteDeadline >> warp_factor
-			publishConsensusDeadline = publishConsensusDeadline >> warp_factor
 			s.log.Debugf("authority: elapsed: %v", elapsed)
 			s.log.Debugf("authority: publishDeadline: %v", publishDeadline)
 			s.log.Debugf("authority: mixPublishDeadline: %v", mixPublishDeadline)
