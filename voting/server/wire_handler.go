@@ -82,6 +82,8 @@ func (s *Server) onConn(conn net.Conn) {
 		return
 	case *commands.GetConsensus:
 		resp = s.onGetConsensus(rAddr, c)
+	case *commands.GetVote:
+		resp = s.onGetVote(rAddr, c)
 	case *commands.PostDescriptor:
 		if auth.peerIdentityKey == nil {
 			// A client trying to post is actively evil, don't even dignify
@@ -125,6 +127,22 @@ func (s *Server) onGetConsensus(rAddr net.Addr, cmd *commands.GetConsensus) comm
 		resp.Payload = doc.raw
 	}
 	return resp
+}
+
+func (s *Server) onGetVote(rAddr net.Addr, cmd *commands.GetVote) commands.Command {
+	vote, err := s.state.GetVote(cmd.Epoch, cmd.PublicKey)
+	if err != nil {
+		resp := &commands.VoteStatus{}
+		resp.ErrorCode = commands.VoteNotFound
+		return resp
+	} else {
+		s.log.Debugf("Peer: %v: Serving vote from %v for epoch %v.", rAddr, cmd.PublicKey, cmd.Epoch)
+		resp := &commands.Vote{}
+		resp.Epoch = cmd.Epoch
+		resp.PublicKey = cmd.PublicKey
+		resp.Payload = vote.raw
+		return resp
+	}
 }
 
 func (s *Server) onPostDescriptor(rAddr net.Addr, cmd *commands.PostDescriptor, pubKey *eddsa.PublicKey) commands.Command {

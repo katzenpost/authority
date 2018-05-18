@@ -61,6 +61,7 @@ const (
 var (
 	errGone   = errors.New("authority: Requested epoch will never get a Document")
 	errNotYet = errors.New("authority: Document is not ready yet")
+	errVoteNotFound = errors.New("authority: Vote not found")
 )
 
 type descriptor struct {
@@ -569,6 +570,14 @@ func (s *state) GetConsensus(epoch uint64) (*document, error) {
 		return s.documents[epoch], nil
 	}
 	return nil, errNotYet
+}
+func (s *state) GetVote(epoch uint64, publicKey *eddsa.PublicKey) (*document, error) {
+	if votes, ok := s.votes[epoch]; ok {
+		if vote, ok := votes[publicKey.ByteArray()]; ok {
+			return vote, nil
+		}
+	}
+	return nil, errVoteNotFound
 }
 
 func (s *state) isTabulated(epoch uint64) bool {
