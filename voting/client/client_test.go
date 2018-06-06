@@ -239,6 +239,9 @@ type mockDialer struct {
 
 func newMockDialer(logBackend *log.Backend) *mockDialer {
 	d := new(mockDialer)
+	d.Lock()
+	defer d.Unlock()
+
 	d.netMap = make(map[string]*conn)
 
 	d.log = logBackend.GetLogger("mockDialer: ")
