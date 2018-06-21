@@ -272,7 +272,7 @@ func (d *mockDialer) waitUntilDialed(address string) {
 	<-dc
 }
 
-func (d *mockDialer) mockServer(address string, linkPrivateKey *ecdh.PrivateKey, identityPrivateKey *eddsa.PrivateKey) {
+func (d *mockDialer) mockServer(address string, linkPrivateKey *ecdh.PrivateKey, identityPrivateKey *eddsa.PrivateKey, wg *sync.WaitGroup) {
 	d.Lock()
 	clientConn, serverConn := net.Pipe()
 	d.netMap[address] = &conn{
@@ -282,6 +282,7 @@ func (d *mockDialer) mockServer(address string, linkPrivateKey *ecdh.PrivateKey,
 		signingKey: identityPrivateKey,
 	}
 	d.Unlock()
+	wg.Done()
 
 	d.waitUntilDialed(address)
 	cfg := &wire.SessionConfig{
@@ -358,12 +359,15 @@ func TestClient(t *testing.T) {
 	require.NoError(err)
 	dialer := newMockDialer(logBackend)
 	peers := []*config.AuthorityPeer{}
+	var wg sync.WaitGroup
 	for i := 0; i < 10; i++ {
 		peer, idPrivKey, linkPrivKey, err := generatePeer(i)
 		require.NoError(err)
 		peers = append(peers, peer)
-		go dialer.mockServer(peer.Addresses[0], linkPrivKey, idPrivKey)
+		wg.Add(1)
+		go dialer.mockServer(peer.Addresses[0], linkPrivKey, idPrivKey, &wg)
 	}
+	wg.Wait()
 	cfg := &Config{
 		LogBackend:    logBackend,
 		Authorities:   peers,
