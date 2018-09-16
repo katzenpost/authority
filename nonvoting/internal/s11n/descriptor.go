@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"time"
 
 	"github.com/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/core/crypto/eddsa"
@@ -33,7 +34,10 @@ import (
 	"golang.org/x/net/idna"
 )
 
-const nodeDescriptorVersion = "nonvoting-v0"
+const (
+	nodeDescriptorVersion = "nonvoting-v0"
+	descriptorCertType    = "mix_descriptor"
+)
 
 type nodeDescriptor struct {
 	// Version uniquely identifies the descriptor format as being for the
@@ -46,17 +50,27 @@ type nodeDescriptor struct {
 
 // SignDescriptor signs and serializes the descriptor with the provided signing
 // key.
-func SignDescriptor(signingKey *eddsa.PrivateKey, base *pki.MixDescriptor) (string, error) {
+func SignDescriptor(signingKey *eddsa.PrivateKey, base *pki.MixDescriptor) ([]byte, error) {
 	d := new(nodeDescriptor)
 	d.MixDescriptor = *base
 	d.Version = nodeDescriptorVersion
 
 	// Serialize and sign the descriptor.
-	signed, err := cert.Sign(signingKey, d)
+	cborHandle := new(codec.CborHandle)
+	cborHandle.Canonical = true
+	desc := []byte{}
+	enc := codec.NewEncoderBytes(&desc, cborHandle)
+	err := enc.Encode(&desc)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return string(signed)
+
+	expiration := time.Now().AddDate(0, 0, 1).Unix()
+	signed, err := cert.Sign(signingKey, desc, descriptorCertType, expiration)
+	if err != nil {
+		return nil, err
+	}
+	return signed, nil
 }
 
 // VerifyAndParseDescriptor verifies the signature and deserializes the
@@ -76,12 +90,15 @@ func VerifyAndParseDescriptor(b []byte, epoch uint64) (*pki.MixDescriptor, error
 	// This is wasteful on the CPU side since it's de-serializing the payload
 	// twice, but this isn't a critical path operation, nor is the non-voting
 	// authority something that will do this a lot.
-	sigs := cert.GetSignatures(b)
+	sigs, err := cert.GetSignatures(b)
+	if err != nil {
+		return nil, err
+	}
 	if len(sigs) != 1 {
 		return nil, fmt.Errorf("nonvoting: Expected 1 signature, got: %v", len(sigs))
 	}
 	candidatePk := new(eddsa.PublicKey)
-	err := k.FromBytes(esigs[0].Identity)
+	err = candidatePk.FromBytes(sigs[0].Identity)
 	if err != nil {
 		return nil, err
 	}
