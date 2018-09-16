@@ -25,12 +25,12 @@ import (
 	"net"
 	"strconv"
 
+	"github.com/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/sphinx/constants"
 	"github.com/ugorji/go/codec"
 	"golang.org/x/net/idna"
-	"gopkg.in/square/go-jose.v2"
 )
 
 const nodeDescriptorVersion = "nonvoting-v0"
@@ -51,29 +51,12 @@ func SignDescriptor(signingKey *eddsa.PrivateKey, base *pki.MixDescriptor) (stri
 	d.MixDescriptor = *base
 	d.Version = nodeDescriptorVersion
 
-	// Serialize the descriptor.
-	var payload []byte
-	enc := codec.NewEncoderBytes(&payload, jsonHandle)
-	if err := enc.Encode(d); err != nil {
-		return "", err
-	}
-
-	// Sign the descriptor.
-	k := jose.SigningKey{
-		Algorithm: jose.EdDSA,
-		Key:       *signingKey.InternalPtr(),
-	}
-	signer, err := jose.NewSigner(k, nil)
+	// Serialize and sign the descriptor.
+	signed, err := cert.Sign(signingKey, d)
 	if err != nil {
 		return "", err
 	}
-	signed, err := signer.Sign(payload)
-	if err != nil {
-		return "", err
-	}
-
-	// Serialize the key, descriptor and signature.
-	return signed.CompactSerialize()
+	return string(signed)
 }
 
 // VerifyAndParseDescriptor verifies the signature and deserializes the
@@ -81,11 +64,6 @@ func SignDescriptor(signingKey *eddsa.PrivateKey, base *pki.MixDescriptor) (stri
 // to have been correctly self signed by the IdentityKey listed in the
 // MixDescriptor.
 func VerifyAndParseDescriptor(b []byte, epoch uint64) (*pki.MixDescriptor, error) {
-	signed, err := jose.ParseSigned(string(b))
-	if err != nil {
-		return nil, err
-	}
-
 	// So the descriptor is going to be signed by the node's key, which may
 	// be new to the authority (which is doing the decoding).   In an ideal
 	// world this is where embedding the public key in the header solves this
@@ -98,30 +76,25 @@ func VerifyAndParseDescriptor(b []byte, epoch uint64) (*pki.MixDescriptor, error
 	// This is wasteful on the CPU side since it's de-serializing the payload
 	// twice, but this isn't a critical path operation, nor is the non-voting
 	// authority something that will do this a lot.
-	if len(signed.Signatures) != 1 {
-		return nil, fmt.Errorf("nonvoting: Expected 1 signature, got: %v", len(signed.Signatures))
+	sigs := cert.GetSignatures(b)
+	if len(sigs) != 1 {
+		return nil, fmt.Errorf("nonvoting: Expected 1 signature, got: %v", len(sigs))
 	}
-	alg := signed.Signatures[0].Header.Algorithm
-	if alg != "EdDSA" {
-		return nil, fmt.Errorf("nonvoting: Unsupported signature algorithm: '%v'", alg)
-	}
-	candidatePk, err := extractSignedDescriptorPublicKey(b)
+	candidatePk := new(eddsa.PublicKey)
+	err := k.FromBytes(esigs[0].Identity)
 	if err != nil {
 		return nil, err
 	}
 
 	// Verify that the descriptor is signed by the key in the header.
-	payload, err := signed.Verify(*candidatePk.InternalPtr())
+	verified, err := cert.Verify(candidatePk, b)
 	if err != nil {
-		if err == jose.ErrCryptoFailure {
-			err = fmt.Errorf("nonvoting: Invalid descriptor signature")
-		}
 		return nil, err
 	}
 
 	// Parse the payload.
 	d := new(nodeDescriptor)
-	dec := codec.NewDecoderBytes(payload, jsonHandle)
+	dec := codec.NewDecoderBytes(verified, jsonHandle)
 	if err = dec.Decode(d); err != nil {
 		return nil, err
 	}
