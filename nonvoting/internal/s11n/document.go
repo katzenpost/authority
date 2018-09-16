@@ -37,7 +37,7 @@ var (
 	// invalid.
 	ErrInvalidEpoch = errors.New("nonvoting: invalid document epoch")
 
-	jsonHandle *codec.JsonHandle
+	cborHandle *codec.CborHandle
 )
 
 // Document is the on-the-wire representation of a PKI Document.
@@ -72,7 +72,7 @@ func SignDocument(signingKey *eddsa.PrivateKey, d *Document) ([]byte, error) {
 
 	// Serialize the document.
 	var payload []byte
-	enc := codec.NewEncoderBytes(&payload, jsonHandle)
+	enc := codec.NewEncoderBytes(&payload, cborHandle)
 	if err := enc.Encode(d); err != nil {
 		return nil, err
 	}
@@ -91,7 +91,7 @@ func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey) (*pki.Document
 
 	// Parse the payload.
 	d := new(Document)
-	dec := codec.NewDecoderBytes(payload, jsonHandle)
+	dec := codec.NewDecoderBytes(payload, cborHandle)
 	if err = dec.Decode(d); err != nil {
 		return nil, err
 	}
@@ -191,11 +191,4 @@ func IsDocumentWellFormed(d *pki.Document) error {
 	}
 
 	return nil
-}
-
-func init() {
-	jsonHandle = new(codec.JsonHandle)
-	jsonHandle.Canonical = true
-	jsonHandle.IntegerAsString = 'A'
-	jsonHandle.MapKeyAsString = true
 }

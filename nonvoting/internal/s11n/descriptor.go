@@ -57,10 +57,10 @@ func SignDescriptor(signingKey *eddsa.PrivateKey, base *pki.MixDescriptor) ([]by
 	d.Version = nodeDescriptorVersion
 
 	// Serialize and sign the descriptor.
-	jsonHandle := new(codec.JsonHandle)
-	jsonHandle.Canonical = true
+	cborHandle := new(codec.CborHandle)
+	cborHandle.Canonical = true
 	desc := []byte{}
-	enc := codec.NewEncoderBytes(&desc, jsonHandle)
+	enc := codec.NewEncoderBytes(&desc, cborHandle)
 	err := enc.Encode(&desc)
 	if err != nil {
 		return nil, err
@@ -115,7 +115,7 @@ func VerifyAndParseDescriptor(b []byte, epoch uint64) (*pki.MixDescriptor, error
 	d.MixKeys = make(map[uint64]*ecdh.PublicKey)
 	d.Kaetzchen = make(map[string]map[string]interface{})
 
-	dec := codec.NewDecoderBytes(verified, jsonHandle)
+	dec := codec.NewDecoderBytes(verified, cborHandle)
 	if err = dec.Decode(d); err != nil {
 		return nil, err
 	}
@@ -147,7 +147,7 @@ func extractSignedDescriptorPublicKey(b []byte) (*eddsa.PublicKey, error) {
 		return nil, fmt.Errorf("nonvoting: (Early) Failed to decode: %v", err)
 	}
 	d := new(nodeDescriptor)
-	dec := codec.NewDecoderBytes(payload, jsonHandle)
+	dec := codec.NewDecoderBytes(payload, cborHandle)
 	if err = dec.Decode(d); err != nil {
 		return nil, fmt.Errorf("nonvoting: (Early) Failed to deserialize: %v", err)
 	}
@@ -307,4 +307,9 @@ func getIPVer(h string) (int, error) {
 		}
 	}
 	return 0, fmt.Errorf("address is not an IP")
+}
+
+func init() {
+	cborHandle = new(codec.CborHandle)
+	cborHandle.Canonical = true
 }
