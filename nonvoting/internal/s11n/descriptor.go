@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/katzenpost/core/crypto/cert"
+	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/sphinx/constants"
@@ -56,10 +57,10 @@ func SignDescriptor(signingKey *eddsa.PrivateKey, base *pki.MixDescriptor) ([]by
 	d.Version = nodeDescriptorVersion
 
 	// Serialize and sign the descriptor.
-	cborHandle := new(codec.CborHandle)
-	cborHandle.Canonical = true
+	jsonHandle := new(codec.JsonHandle)
+	jsonHandle.Canonical = true
 	desc := []byte{}
-	enc := codec.NewEncoderBytes(&desc, cborHandle)
+	enc := codec.NewEncoderBytes(&desc, jsonHandle)
 	err := enc.Encode(&desc)
 	if err != nil {
 		return nil, err
@@ -111,6 +112,9 @@ func VerifyAndParseDescriptor(b []byte, epoch uint64) (*pki.MixDescriptor, error
 
 	// Parse the payload.
 	d := new(nodeDescriptor)
+	d.MixKeys = make(map[uint64]*ecdh.PublicKey)
+	d.Kaetzchen = make(map[string]map[string]interface{})
+
 	dec := codec.NewDecoderBytes(verified, jsonHandle)
 	if err = dec.Decode(d); err != nil {
 		return nil, err
@@ -134,23 +138,6 @@ func VerifyAndParseDescriptor(b []byte, epoch uint64) (*pki.MixDescriptor, error
 }
 
 func extractSignedDescriptorPublicKey(b []byte) (*eddsa.PublicKey, error) {
-	// Per RFC 7515:
-	//
-	// In the JWS Compact Serialization, a JWS is represented as the
-	// concatenation:
-	//
-	//   BASE64URL(UTF8(JWS Protected Header)) || '.' ||
-	//   BASE64URL(JWS Payload) || '.' ||
-	//   BASE64URL(JWS Signature)
-	//
-	// The JOSE library used doesn't support embedding EdDSA JWK Public Keys
-	// so this reaches into the (unverified) payload, to pull out the
-	// descriptor's PublicKey.
-	//
-	// XXX: Doing things this way, decodes the same object twice, once
-	// prior to validating the signature, and once after, which is
-	// inefficient, but this shouldn't be a critical path operation.
-
 	spl := bytes.Split(b, []byte{'.'})
 	if len(spl) != 3 {
 		return nil, fmt.Errorf("nonvoting: Splitting at '.' returned unexpected number of sections: %v", len(spl))
