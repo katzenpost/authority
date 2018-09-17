@@ -541,7 +541,7 @@ func (s *state) restorePersistence() error {
 
 				c := eDescsBkt.Cursor()
 				for pk, rawDesc := c.First(); pk != nil; pk, rawDesc = c.Next() {
-					desc, err := s11n.VerifyAndParseDescriptor(rawDesc, epoch)
+					desc, err := s11n.VerifyAndParseDescriptor(pk, rawDesc, epoch)
 					if err != nil {
 						s.log.Errorf("Failed to validate persisted descriptor: %v", err)
 						continue

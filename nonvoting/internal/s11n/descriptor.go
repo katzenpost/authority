@@ -20,20 +20,22 @@ package s11n
 
 import (
 	"bytes"
-	"encoding/base64"
 	"fmt"
 	"net"
 	"strconv"
+	"time"
 
-	"github.com/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/sphinx/constants"
 	"github.com/ugorji/go/codec"
 	"golang.org/x/net/idna"
-	"gopkg.in/square/go-jose.v2"
 )
 
-const nodeDescriptorVersion = "nonvoting-v0"
+const (
+	nodeDescriptorVersion = "nonvoting-v0"
+	descriptorCertType    = "mix_descriptor"
+)
 
 type nodeDescriptor struct {
 	// Version uniquely identifies the descriptor format as being for the
@@ -46,46 +48,34 @@ type nodeDescriptor struct {
 
 // SignDescriptor signs and serializes the descriptor with the provided signing
 // key.
-func SignDescriptor(signingKey *eddsa.PrivateKey, base *pki.MixDescriptor) (string, error) {
+func SignDescriptor(signer cert.Signer, base *pki.MixDescriptor) ([]byte, error) {
 	d := new(nodeDescriptor)
 	d.MixDescriptor = *base
 	d.Version = nodeDescriptorVersion
 
-	// Serialize the descriptor.
-	var payload []byte
-	enc := codec.NewEncoderBytes(&payload, jsonHandle)
-	if err := enc.Encode(d); err != nil {
-		return "", err
+	// Serialize and sign the descriptor.
+	cborHandle := new(codec.CborHandle)
+	cborHandle.Canonical = true
+	desc := []byte{}
+	enc := codec.NewEncoderBytes(&desc, cborHandle)
+	err := enc.Encode(&desc)
+	if err != nil {
+		return nil, err
 	}
 
-	// Sign the descriptor.
-	k := jose.SigningKey{
-		Algorithm: jose.EdDSA,
-		Key:       *signingKey.InternalPtr(),
-	}
-	signer, err := jose.NewSigner(k, nil)
+	expiration := time.Now().AddDate(0, 0, 1).Unix()
+	signed, err := cert.Sign(signer, desc, expiration)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	signed, err := signer.Sign(payload)
-	if err != nil {
-		return "", err
-	}
-
-	// Serialize the key, descriptor and signature.
-	return signed.CompactSerialize()
+	return signed, nil
 }
 
 // VerifyAndParseDescriptor verifies the signature and deserializes the
 // descriptor.  MixDescriptors returned from this routine are guaranteed
 // to have been correctly self signed by the IdentityKey listed in the
 // MixDescriptor.
-func VerifyAndParseDescriptor(b []byte, epoch uint64) (*pki.MixDescriptor, error) {
-	signed, err := jose.ParseSigned(string(b))
-	if err != nil {
-		return nil, err
-	}
-
+func VerifyAndParseDescriptor(verifier cert.Verifier, b []byte, epoch uint64) (*pki.MixDescriptor, error) {
 	// So the descriptor is going to be signed by the node's key, which may
 	// be new to the authority (which is doing the decoding).   In an ideal
 	// world this is where embedding the public key in the header solves this
@@ -98,30 +88,19 @@ func VerifyAndParseDescriptor(b []byte, epoch uint64) (*pki.MixDescriptor, error
 	// This is wasteful on the CPU side since it's de-serializing the payload
 	// twice, but this isn't a critical path operation, nor is the non-voting
 	// authority something that will do this a lot.
-	if len(signed.Signatures) != 1 {
-		return nil, fmt.Errorf("nonvoting: Expected 1 signature, got: %v", len(signed.Signatures))
-	}
-	alg := signed.Signatures[0].Header.Algorithm
-	if alg != "EdDSA" {
-		return nil, fmt.Errorf("nonvoting: Unsupported signature algorithm: '%v'", alg)
-	}
-	candidatePk, err := extractSignedDescriptorPublicKey(b)
-	if err != nil {
-		return nil, err
-	}
 
 	// Verify that the descriptor is signed by the key in the header.
-	payload, err := signed.Verify(*candidatePk.InternalPtr())
+	verified, err := cert.Verify(verifier, b)
 	if err != nil {
-		if err == jose.ErrCryptoFailure {
-			err = fmt.Errorf("nonvoting: Invalid descriptor signature")
-		}
 		return nil, err
 	}
 
 	// Parse the payload.
 	d := new(nodeDescriptor)
-	dec := codec.NewDecoderBytes(payload, jsonHandle)
+	d.MixKeys = make(map[uint64]cert.Verifier)
+	d.Kaetzchen = make(map[string]map[string]interface{})
+
+	dec := codec.NewDecoderBytes(verified, cborHandle)
 	if err = dec.Decode(d); err != nil {
 		return nil, err
 	}
@@ -137,48 +116,10 @@ func VerifyAndParseDescriptor(b []byte, epoch uint64) (*pki.MixDescriptor, error
 	// And as the final check, ensure that the key embedded in the descriptor
 	// matches the key we teased out of the payload, that we used to validate
 	// the signature.
-	if !candidatePk.Equal(d.IdentityKey) {
+	if !bytes.Equal(verifier.Identity(), d.IdentityKey.Identity()) {
 		return nil, fmt.Errorf("nonvoting: Descriptor signing key mismatch")
 	}
 	return &d.MixDescriptor, nil
-}
-
-func extractSignedDescriptorPublicKey(b []byte) (*eddsa.PublicKey, error) {
-	// Per RFC 7515:
-	//
-	// In the JWS Compact Serialization, a JWS is represented as the
-	// concatenation:
-	//
-	//   BASE64URL(UTF8(JWS Protected Header)) || '.' ||
-	//   BASE64URL(JWS Payload) || '.' ||
-	//   BASE64URL(JWS Signature)
-	//
-	// The JOSE library used doesn't support embedding EdDSA JWK Public Keys
-	// so this reaches into the (unverified) payload, to pull out the
-	// descriptor's PublicKey.
-	//
-	// XXX: Doing things this way, decodes the same object twice, once
-	// prior to validating the signature, and once after, which is
-	// inefficient, but this shouldn't be a critical path operation.
-
-	spl := bytes.Split(b, []byte{'.'})
-	if len(spl) != 3 {
-		return nil, fmt.Errorf("nonvoting: Splitting at '.' returned unexpected number of sections: %v", len(spl))
-	}
-	payload, err := base64.RawURLEncoding.DecodeString(string(spl[1]))
-	if err != nil {
-		return nil, fmt.Errorf("nonvoting: (Early) Failed to decode: %v", err)
-	}
-	d := new(nodeDescriptor)
-	dec := codec.NewDecoderBytes(payload, jsonHandle)
-	if err = dec.Decode(d); err != nil {
-		return nil, fmt.Errorf("nonvoting: (Early) Failed to deserialize: %v", err)
-	}
-	candidatePk := d.IdentityKey
-	if candidatePk == nil {
-		return nil, fmt.Errorf("nonvoting: (Early) Descriptor missing IdentityKey")
-	}
-	return candidatePk, nil
 }
 
 // IsDescriptorWellFormed validates the descriptor and returns a descriptive
@@ -330,4 +271,9 @@ func getIPVer(h string) (int, error) {
 		}
 	}
 	return 0, fmt.Errorf("address is not an IP")
+}
+
+func init() {
+	cborHandle = new(codec.CborHandle)
+	cborHandle.Canonical = true
 }
