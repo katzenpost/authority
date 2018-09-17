@@ -67,7 +67,7 @@ type Document struct {
 }
 
 // SignDocument signs and serializes the document with the provided signing key.
-func SignDocument(signingKey *eddsa.PrivateKey, d *Document) ([]byte, error) {
+func SignDocument(signer cert.Signer, d *Document) ([]byte, error) {
 	d.Version = documentVersion
 
 	// Serialize the document.
@@ -79,12 +79,12 @@ func SignDocument(signingKey *eddsa.PrivateKey, d *Document) ([]byte, error) {
 
 	// Sign the document.
 	expiration := time.Now().AddDate(0, 0, 1).Unix()
-	return cert.Sign(signingKey, payload, authorityCertType, expiration)
+	return cert.Sign(signer, payload, expiration)
 }
 
 // VerifyAndParseDocument verifies the signautre and deserializes the document.
-func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey) (*pki.Document, error) {
-	payload, err := cert.Verify(publicKey, b)
+func VerifyAndParseDocument(b []byte, verifier cert.Verifier) (*pki.Document, error) {
+	payload, err := cert.Verify(verifier, b)
 	if err != nil {
 		return nil, err
 	}
