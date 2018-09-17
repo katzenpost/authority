@@ -67,7 +67,7 @@ func SignDescriptor(signer cert.Signer, base *pki.MixDescriptor) ([]byte, error)
 	}
 
 	expiration := time.Now().AddDate(0, 0, 1).Unix()
-	signed, err := cert.Sign(signer, desc, descriptorCertType, expiration)
+	signed, err := cert.Sign(signer, desc, expiration)
 	if err != nil {
 		return nil, err
 	}
