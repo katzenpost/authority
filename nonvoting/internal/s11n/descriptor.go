@@ -51,7 +51,7 @@ type nodeDescriptor struct {
 
 // SignDescriptor signs and serializes the descriptor with the provided signing
 // key.
-func SignDescriptor(signingKey *eddsa.PrivateKey, base *pki.MixDescriptor) ([]byte, error) {
+func SignDescriptor(signer cert.Signer, base *pki.MixDescriptor) ([]byte, error) {
 	d := new(nodeDescriptor)
 	d.MixDescriptor = *base
 	d.Version = nodeDescriptorVersion
@@ -67,7 +67,7 @@ func SignDescriptor(signingKey *eddsa.PrivateKey, base *pki.MixDescriptor) ([]by
 	}
 
 	expiration := time.Now().AddDate(0, 0, 1).Unix()
-	signed, err := cert.Sign(signingKey, desc, descriptorCertType, expiration)
+	signed, err := cert.Sign(signer, desc, descriptorCertType, expiration)
 	if err != nil {
 		return nil, err
 	}
