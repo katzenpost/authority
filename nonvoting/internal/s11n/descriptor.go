@@ -20,15 +20,12 @@ package s11n
 
 import (
 	"bytes"
-	"encoding/base64"
 	"fmt"
 	"net"
 	"strconv"
 	"time"
 
 	"github.com/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/sphinx/constants"
 	"github.com/ugorji/go/codec"
@@ -78,7 +75,7 @@ func SignDescriptor(signer cert.Signer, base *pki.MixDescriptor) ([]byte, error)
 // descriptor.  MixDescriptors returned from this routine are guaranteed
 // to have been correctly self signed by the IdentityKey listed in the
 // MixDescriptor.
-func VerifyAndParseDescriptor(b []byte, epoch uint64) (*pki.MixDescriptor, error) {
+func VerifyAndParseDescriptor(verifier cert.Verifier, b []byte, epoch uint64) (*pki.MixDescriptor, error) {
 	// So the descriptor is going to be signed by the node's key, which may
 	// be new to the authority (which is doing the decoding).   In an ideal
 	// world this is where embedding the public key in the header solves this
@@ -91,28 +88,16 @@ func VerifyAndParseDescriptor(b []byte, epoch uint64) (*pki.MixDescriptor, error
 	// This is wasteful on the CPU side since it's de-serializing the payload
 	// twice, but this isn't a critical path operation, nor is the non-voting
 	// authority something that will do this a lot.
-	sigs, err := cert.GetSignatures(b)
-	if err != nil {
-		return nil, err
-	}
-	if len(sigs) != 1 {
-		return nil, fmt.Errorf("nonvoting: Expected 1 signature, got: %v", len(sigs))
-	}
-	candidatePk := new(eddsa.PublicKey)
-	err = candidatePk.FromBytes(sigs[0].Identity)
-	if err != nil {
-		return nil, err
-	}
 
 	// Verify that the descriptor is signed by the key in the header.
-	verified, err := cert.Verify(candidatePk, b)
+	verified, err := cert.Verify(verifier, b)
 	if err != nil {
 		return nil, err
 	}
 
 	// Parse the payload.
 	d := new(nodeDescriptor)
-	d.MixKeys = make(map[uint64]*ecdh.PublicKey)
+	d.MixKeys = make(map[uint64]cert.Verifier)
 	d.Kaetzchen = make(map[string]map[string]interface{})
 
 	dec := codec.NewDecoderBytes(verified, cborHandle)
@@ -131,31 +116,10 @@ func VerifyAndParseDescriptor(b []byte, epoch uint64) (*pki.MixDescriptor, error
 	// And as the final check, ensure that the key embedded in the descriptor
 	// matches the key we teased out of the payload, that we used to validate
 	// the signature.
-	if !candidatePk.Equal(d.IdentityKey) {
+	if !bytes.Equal(verifier.Identity(), d.IdentityKey.Identity()) {
 		return nil, fmt.Errorf("nonvoting: Descriptor signing key mismatch")
 	}
 	return &d.MixDescriptor, nil
-}
-
-func extractSignedDescriptorPublicKey(b []byte) (*eddsa.PublicKey, error) {
-	spl := bytes.Split(b, []byte{'.'})
-	if len(spl) != 3 {
-		return nil, fmt.Errorf("nonvoting: Splitting at '.' returned unexpected number of sections: %v", len(spl))
-	}
-	payload, err := base64.RawURLEncoding.DecodeString(string(spl[1]))
-	if err != nil {
-		return nil, fmt.Errorf("nonvoting: (Early) Failed to decode: %v", err)
-	}
-	d := new(nodeDescriptor)
-	dec := codec.NewDecoderBytes(payload, cborHandle)
-	if err = dec.Decode(d); err != nil {
-		return nil, fmt.Errorf("nonvoting: (Early) Failed to deserialize: %v", err)
-	}
-	candidatePk := d.IdentityKey
-	if candidatePk == nil {
-		return nil, fmt.Errorf("nonvoting: (Early) Descriptor missing IdentityKey")
-	}
-	return candidatePk, nil
 }
 
 // IsDescriptorWellFormed validates the descriptor and returns a descriptive

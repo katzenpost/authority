@@ -120,7 +120,8 @@ func VerifyAndParseDocument(b []byte, verifier cert.Verifier) (*pki.Document, er
 
 	for layer, nodes := range d.Topology {
 		for _, rawDesc := range nodes {
-			desc, err := VerifyAndParseDescriptor(rawDesc, doc.Epoch)
+			//XXX: need to extract the verifier key from rawDesc and instantiate a cert.Verifier
+			desc, err := VerifyAndParseDescriptor(verifier, rawDesc, doc.Epoch)
 			if err != nil {
 				return nil, err
 			}
@@ -129,7 +130,8 @@ func VerifyAndParseDocument(b []byte, verifier cert.Verifier) (*pki.Document, er
 	}
 
 	for _, rawDesc := range d.Providers {
-		desc, err := VerifyAndParseDescriptor(rawDesc, doc.Epoch)
+		//XXX: need to extract the verifier key from rawDesc and instantiate a cert.Verifier
+		desc, err := VerifyAndParseDescriptor(verifier, rawDesc, doc.Epoch)
 		if err != nil {
 			return nil, err
 		}
