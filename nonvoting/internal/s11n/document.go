@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"github.com/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/pki"
 	"github.com/ugorji/go/codec"
 )
@@ -154,7 +153,7 @@ func VerifyAndParseDocument(b []byte, verifier cert.Verifier) (*pki.Document, er
 // IsDocumentWellFormed validates the document and returns a descriptive error
 // iff there are any problems that invalidates the document.
 func IsDocumentWellFormed(d *pki.Document) error {
-	pks := make(map[[eddsa.PublicKeySize]byte]bool)
+	pks := make(map[string]bool)
 	if len(d.Topology) == 0 {
 		return fmt.Errorf("nonvoting: Document contains no Topology")
 	}
@@ -166,7 +165,7 @@ func IsDocumentWellFormed(d *pki.Document) error {
 			if err := IsDescriptorWellFormed(desc, d.Epoch); err != nil {
 				return err
 			}
-			pk := desc.IdentityKey.ByteArray()
+			pk := string(desc.IdentityKey.Identity())
 			if _, ok := pks[pk]; ok {
 				return fmt.Errorf("nonvoting: Document contains multiple entries for %v", desc.IdentityKey)
 			}
@@ -183,7 +182,7 @@ func IsDocumentWellFormed(d *pki.Document) error {
 		if desc.Layer != pki.LayerProvider {
 			return fmt.Errorf("nonvoting: Document lists %v as a Provider with layer %v", desc.IdentityKey, desc.Layer)
 		}
-		pk := desc.IdentityKey.ByteArray()
+		pk := string(desc.IdentityKey.Identity())
 		if _, ok := pks[pk]; ok {
 			return fmt.Errorf("nonvoting: Document contains multiple entries for %v", desc.IdentityKey)
 		}
