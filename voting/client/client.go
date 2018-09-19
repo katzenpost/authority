@@ -314,7 +314,7 @@ func (c *client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 
 	sigMap, err := s11n.VerifyPeerMulti(r.Payload, c.cfg.Authorities)
 	if err != nil {
-		c.log.Errorf("fufu voting/client: Get() invalid consensus document: %s", err)
+		c.log.Errorf("fufu123 voting/client: Get() invalid consensus document: %s", err)
 		return nil, nil, fmt.Errorf("fufu voting/client: Get() invalid consensus document: %s", err)
 	}
 	if len(sigMap) == len(c.cfg.Authorities) {
@@ -325,7 +325,7 @@ func (c *client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 	}
 	id := new(eddsa.PublicKey)
 	for idRaw := range sigMap {
-		id.FromBytes(idRaw[:])
+		id.FromBytes([]byte(idRaw))
 		doc, _, err = s11n.VerifyAndParseDocument(r.Payload, id)
 		if err != nil {
 			return nil, nil, fmt.Errorf("voting/client: Get() impossible signature verification failure: %s", err)
