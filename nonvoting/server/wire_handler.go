@@ -112,6 +112,10 @@ func (s *Server) onGetConsensus(rAddr net.Addr, cmd *commands.GetConsensus) comm
 			resp.ErrorCode = commands.ConsensusNotFound
 		}
 	} else {
+		if doc == nil {
+			s.log.Errorf("Peer %v: Failed to retreive document for epoch '%v': received nil document", rAddr, cmd.Epoch)
+			return nil
+		}
 		s.log.Debugf("Peer: %v: Serving document for epoch %v.", rAddr, cmd.Epoch)
 		resp.ErrorCode = commands.ConsensusOk
 		resp.Payload = doc
