@@ -1,5 +1,5 @@
 // wire_handler.go - Katzenpost non-voting authority connection handler.
-// Copyright (C) 2018  Yawning Angel.
+// Copyright (C) 2017, 2018  Yawning Angel, masala and David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -20,7 +20,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/katzenpost/authority/nonvoting/internal/s11n"
+	"github.com/katzenpost/authority/voting/internal/s11n"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/epochtime"
@@ -75,6 +75,16 @@ func (s *Server) onConn(conn net.Conn) {
 	// Parse the command, and craft the response.
 	var resp commands.Command
 	switch c := cmd.(type) {
+	case *commands.Vote:
+		resp = s.onVote(c)
+	case *commands.VoteStatus:
+		s.log.Error("VoteStatus command is not allowed on Authority wire service listener.")
+		return
+	case *commands.Reveal:
+		resp = s.onReveal(c)
+	case *commands.RevealStatus:
+		s.log.Error("RevealStatus command is not allowed on Authority wire service listener.")
+		return
 	case *commands.GetConsensus:
 		resp = s.onGetConsensus(rAddr, c)
 	case *commands.PostDescriptor:
@@ -99,9 +109,17 @@ func (s *Server) onConn(conn net.Conn) {
 	}
 }
 
+func (s *Server) onVote(cmd *commands.Vote) commands.Command {
+	return s.state.onVoteUpload(cmd)
+}
+
+func (s *Server) onReveal(cmd *commands.Reveal) commands.Command {
+	return s.state.onRevealUpload(cmd)
+}
+
 func (s *Server) onGetConsensus(rAddr net.Addr, cmd *commands.GetConsensus) commands.Command {
 	resp := &commands.Consensus{}
-	doc, err := s.state.documentForEpoch(cmd.Epoch)
+	doc, err := s.state.GetConsensus(cmd.Epoch)
 	if err != nil {
 		s.log.Errorf("Peer %v: Failed to retreive document for epoch '%v': %v", rAddr, cmd.Epoch, err)
 		switch err {
@@ -113,7 +131,7 @@ func (s *Server) onGetConsensus(rAddr net.Addr, cmd *commands.GetConsensus) comm
 	} else {
 		s.log.Debugf("Peer: %v: Serving document for epoch %v.", rAddr, cmd.Epoch)
 		resp.ErrorCode = commands.ConsensusOk
-		resp.Payload = doc
+		resp.Payload = doc.raw
 	}
 	return resp
 }
@@ -137,7 +155,12 @@ func (s *Server) onPostDescriptor(rAddr net.Addr, cmd *commands.PostDescriptor, 
 	}
 
 	// Validate and deserialize the descriptor.
-	desc, err := s11n.VerifyAndParseDescriptor(cmd.Payload, cmd.Epoch)
+	verifier, err := s11n.GetVerifierFromDescriptor(cmd.Payload)
+	if err != nil {
+		s.log.Errorf("Peer %v: Invalid descriptor: %v", rAddr, err)
+		return resp
+	}
+	desc, err := s11n.VerifyAndParseDescriptor(verifier, cmd.Payload, cmd.Epoch)
 	if err != nil {
 		s.log.Errorf("Peer %v: Invalid descriptor: %v", rAddr, err)
 		return resp
