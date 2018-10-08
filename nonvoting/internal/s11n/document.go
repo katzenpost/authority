@@ -176,9 +176,9 @@ func IsDocumentWellFormed(d *pki.Document) error {
 			if err := IsDescriptorWellFormed(desc, d.Epoch); err != nil {
 				return err
 			}
-			pk := string(desc.IdentityKey.Identity())
+			pk := string(desc.SigningKey.Identity())
 			if _, ok := pks[pk]; ok {
-				return fmt.Errorf("nonvoting: Document contains multiple entries for %v", desc.IdentityKey)
+				return fmt.Errorf("nonvoting: Document contains multiple entries for %v", desc.SigningKey)
 			}
 			pks[pk] = true
 		}
@@ -191,11 +191,11 @@ func IsDocumentWellFormed(d *pki.Document) error {
 			return err
 		}
 		if desc.Layer != pki.LayerProvider {
-			return fmt.Errorf("nonvoting: Document lists %v as a Provider with layer %v", desc.IdentityKey, desc.Layer)
+			return fmt.Errorf("nonvoting: Document lists %v as a Provider with layer %v", desc.SigningKey, desc.Layer)
 		}
-		pk := string(desc.IdentityKey.Identity())
+		pk := string(desc.SigningKey.Identity())
 		if _, ok := pks[pk]; ok {
-			return fmt.Errorf("nonvoting: Document contains multiple entries for %v", desc.IdentityKey)
+			return fmt.Errorf("nonvoting: Document contains multiple entries for %v", desc.SigningKey)
 		}
 		pks[pk] = true
 	}

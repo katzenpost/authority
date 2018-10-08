@@ -82,12 +82,12 @@ func GetVerifierFromDescriptor(rawDesc []byte) (cert.Verifier, error) {
 	if err = dec.Decode(d); err != nil {
 		return nil, err
 	}
-	return d.IdentityKey, nil
+	return d.SigningKey, nil
 }
 
 // VerifyAndParseDescriptor verifies the signature and deserializes the
 // descriptor.  MixDescriptors returned from this routine are guaranteed
-// to have been correctly self signed by the IdentityKey listed in the
+// to have been correctly self signed by the SigningKey listed in the
 // MixDescriptor.
 func VerifyAndParseDescriptor(verifier cert.Verifier, b []byte, epoch uint64) (*pki.MixDescriptor, error) {
 	signatures, err := cert.GetSignatures(b)
@@ -131,8 +131,8 @@ func IsDescriptorWellFormed(d *pki.MixDescriptor, epoch uint64) error {
 	if d.LinkKey == nil {
 		return fmt.Errorf("nonvoting: Descriptor missing LinkKey")
 	}
-	if d.IdentityKey == nil {
-		return fmt.Errorf("nonvoting: Descriptor missing IdentityKey")
+	if d.SigningKey == nil {
+		return fmt.Errorf("nonvoting: Descriptor missing SigningKey")
 	}
 	if d.MixKeys[epoch] == nil {
 		return fmt.Errorf("nonvoting: Descriptor missing MixKey[%v]", epoch)
