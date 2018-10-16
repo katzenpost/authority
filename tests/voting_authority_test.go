@@ -33,17 +33,21 @@ import (
 	"github.com/hpcloud/tail"
 	vServer "github.com/katzenpost/authority/voting/server"
 	vConfig "github.com/katzenpost/authority/voting/server/config"
+	"github.com/katzenpost/client"
+	cConfig "github.com/katzenpost/client/config"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/epochtime"
 	"github.com/katzenpost/core/thwack"
+	"github.com/katzenpost/core/utils"
 	nServer "github.com/katzenpost/server"
 	sConfig "github.com/katzenpost/server/config"
 	"github.com/stretchr/testify/assert"
 )
 
 const (
+	pingService   = "loop"
 	logFile       = "kimchi.log"
 	basePort      = 30000
 	nrNodes       = 6
@@ -240,11 +244,6 @@ func (s *kimchi) genNodeConfig(isProvider bool, isVoting bool) error {
 		loopCfg.Capability = "loop"
 		loopCfg.Endpoint = "+loop"
 		cfg.Provider.Kaetzchen = append(cfg.Provider.Kaetzchen, loopCfg)
-
-		keysvrCfg := new(sConfig.Kaetzchen)
-		keysvrCfg.Capability = "keyserver"
-		keysvrCfg.Endpoint = "+keyserver"
-		cfg.Provider.Kaetzchen = append(cfg.Provider.Kaetzchen, keysvrCfg)
 	} else {
 		s.nodeIdx++
 	}
@@ -341,6 +340,37 @@ func (s *kimchi) logTailer(prefix, path string) {
 	}
 }
 
+func makeClient(t *testing.T, baseDir, name string) *client.Client {
+	assert := assert.New(t)
+
+	dataDir := filepath.Join(baseDir, fmt.Sprintf("client_%s", name))
+	err := utils.MkDataDir(dataDir)
+	assert.NoError(err)
+
+	cfg := cConfig.Config{
+		Proxy: &cConfig.Proxy{
+			DataDir: dataDir,
+		},
+		Logging: &cConfig.Logging{
+			Disable: false,
+			File:    "",
+			Level:   "DEBUG",
+		},
+		UpstreamProxy: nil,
+		Debug: &cConfig.Debug{
+			InitialMaxPKIRetrievalDelay: 10,
+		},
+	}
+
+	err = cfg.FixupAndValidate()
+	assert.NoError(err)
+
+	c, err := client.New(&cfg)
+	assert.NoError(err)
+
+	return c
+}
+
 func TestNaiveBasicVotingAuth(t *testing.T) {
 	assert := assert.New(t)
 
@@ -406,17 +436,23 @@ func TestNaiveBasicVotingAuth(t *testing.T) {
 
 	alicePrivateKey, err := ecdh.NewKeypair(rand.Reader)
 	assert.NoError(err)
-	bobPrivateKey, err := ecdh.NewKeypair(rand.Reader)
-	assert.NoError(err)
 
 	// Initialize Alice's mailproxy.
 	err = s.thwackUser(s.nodeConfigs[0], "aLiCe", alicePrivateKey.PublicKey())
 	assert.NoError(err)
 
-	// Initialize Bob's mailproxy.
-	err = s.thwackUser(s.nodeConfigs[1], "BoB", bobPrivateKey.PublicKey())
+	// Alice connects to her Provider.
+	aliceClient := makeClient(t)
+	aliceSession, err := aliceClient.NewSession()
 	assert.NoError(err)
 
+	serviceDesc, err := aliceSession.GetService(pingService)
+	assert.NoError(err)
+	fmt.Println(serviceDesc.Name, serviceDesc.Provider)
+
+	// XXX Alice does other stuff...
+
+	// Shutdown code path.
 	for _, svr := range s.servers {
 		svr.Shutdown()
 	}
