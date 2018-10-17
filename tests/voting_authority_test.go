@@ -360,6 +360,20 @@ func makeClient(t *testing.T, baseDir, name string) *client.Client {
 		Debug: &cConfig.Debug{
 			InitialMaxPKIRetrievalDelay: 10,
 		},
+		VotingAuthority: &cConfig.VotingAuthority{
+			Peers: []*vConfig.AuthorityPeer{
+				&vConfig.AuthorityPeer{
+					IdentityPublicKey: blah,
+					LinkPublicKey:     blah,
+					Addresses:         []string{},
+				},
+			},
+		},
+		Account: &cConfig.Account{
+			User:           blah,
+			Provider:       blah,
+			ProviderKeyPin: blahblahblah,
+		},
 	}
 
 	err = cfg.FixupAndValidate()
