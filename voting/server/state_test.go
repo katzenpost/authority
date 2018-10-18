@@ -27,7 +27,7 @@ import (
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/pki"
 	"github.com/stretchr/testify/assert"
-	"golang.org/x/crypto/sha3"
+	"golang.org/x/crypto/blake2b"
 )
 
 func TestSharedRandomVerify(t *testing.T) {
@@ -41,7 +41,7 @@ func TestSharedRandomVerify(t *testing.T) {
 	t.Logf("commit %v", commit)
 	assert.True(bytes.Equal(commit, srv.GetCommit()))
 	reveal := srv.Reveal()
-	t.Logf("h(reveal) %v", sha3.Sum256(reveal))
+	t.Logf("h(reveal) %v", blake2b.Sum256(reveal))
 	t.Logf("reveal %v", reveal)
 	t.Logf("len(reveal): %v", len(reveal))
 	assert.True(len(reveal) == s11n.SharedRandomLength)
