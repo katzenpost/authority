@@ -340,14 +340,16 @@ func (s *kimchi) logTailer(prefix, path string) {
 	}
 }
 
-func makeClient(t *testing.T, baseDir, name string) *client.Client {
+func (s *kimchi) makeClient(t *testing.T, baseDir, user, provider string, privateKey *ecdh.PrivateKey, isVoting bool) *client.Client {
 	assert := assert.New(t)
 
-	dataDir := filepath.Join(baseDir, fmt.Sprintf("client_%s", name))
+	dataDir := filepath.Join(baseDir, fmt.Sprintf("client_%s", user))
 	err := utils.MkDataDir(dataDir)
 	assert.NoError(err)
-
 	cfg := cConfig.Config{
+		UpstreamProxy: &cConfig.UpstreamProxy{
+			Type: "none",
+		},
 		Proxy: &cConfig.Proxy{
 			DataDir: dataDir,
 		},
@@ -356,23 +358,16 @@ func makeClient(t *testing.T, baseDir, name string) *client.Client {
 			File:    "",
 			Level:   "DEBUG",
 		},
-		UpstreamProxy: nil,
 		Debug: &cConfig.Debug{
-			InitialMaxPKIRetrievalDelay: 10,
+			InitialMaxPKIRetrievalDelay: 266,
 		},
 		VotingAuthority: &cConfig.VotingAuthority{
-			Peers: []*vConfig.AuthorityPeer{
-				&vConfig.AuthorityPeer{
-					IdentityPublicKey: blah,
-					LinkPublicKey:     blah,
-					Addresses:         []string{},
-				},
-			},
+			Peers: s.votingAuthConfigs[0].Authorities,
 		},
 		Account: &cConfig.Account{
-			User:           blah,
-			Provider:       blah,
-			ProviderKeyPin: blahblahblah,
+			User:     user,
+			Provider: provider,
+			//ProviderKeyPin: blahblahblah,
 		},
 	}
 
@@ -452,17 +447,18 @@ func TestNaiveBasicVotingAuth(t *testing.T) {
 	assert.NoError(err)
 
 	// Initialize Alice's mailproxy.
-	err = s.thwackUser(s.nodeConfigs[0], "aLiCe", alicePrivateKey.PublicKey())
+	user := "alice"
+	err = s.thwackUser(s.nodeConfigs[0], user, alicePrivateKey.PublicKey())
 	assert.NoError(err)
 
 	// Alice connects to her Provider.
-	aliceClient := makeClient(t)
-	aliceSession, err := aliceClient.NewSession()
+	aliceClient := s.makeClient(t, s.baseDir, user, s.nodeConfigs[0].Server.Identifier, alicePrivateKey, true)
+	_, err = aliceClient.NewSession()
 	assert.NoError(err)
 
-	serviceDesc, err := aliceSession.GetService(pingService)
-	assert.NoError(err)
-	fmt.Println(serviceDesc.Name, serviceDesc.Provider)
+	//serviceDesc, err := aliceSession.GetService(pingService)
+	//assert.NoError(err)
+	//fmt.Println(serviceDesc.Name, serviceDesc.Provider)
 
 	// XXX Alice does other stuff...
 
