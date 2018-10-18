@@ -18,16 +18,20 @@ package tests
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
+	mrand "math/rand"
 	"net/textproto"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sync"
 	"testing"
+	"testing/quick"
 	"time"
 
 	"github.com/hpcloud/tail"
@@ -47,12 +51,11 @@ import (
 )
 
 const (
-	pingService   = "loop"
-	logFile       = "kimchi.log"
-	basePort      = 30000
-	nrNodes       = 3
-	nrProviders   = 1
-	nrAuthorities = 3
+	pingService = "loop"
+	logFile     = "kimchi.log"
+	basePort    = 30000
+	nrNodes     = 3
+	nrProviders = 1
 )
 
 var tailConfig = tail.Config{
@@ -87,8 +90,9 @@ type kimchi struct {
 func newKimchi(basePort int) *kimchi {
 	//[]*sConfig.Config
 	k := &kimchi{
-		lastPort:    uint16(basePort + 1),
-		nodeConfigs: make([]*sConfig.Config, 0),
+		lastPort:          uint16(basePort + 1),
+		nodeConfigs:       make([]*sConfig.Config, 0),
+		votingAuthConfigs: make([]*vConfig.Config, 0),
 	}
 	return k
 }
@@ -107,7 +111,7 @@ func (s *kimchi) initLogging() error {
 	return nil
 }
 
-func (s *kimchi) genVotingAuthoritiesCfg(numAuthorities int) error {
+func (s *kimchi) genGoodVotingAuthoritiesCfg(numAuthorities int) error {
 	parameters := &vConfig.Parameters{
 		MixLambda:       1,
 		MixMaxDelay:     10000,
@@ -162,7 +166,60 @@ func (s *kimchi) genVotingAuthoritiesCfg(numAuthorities int) error {
 		}
 		configs[i].Authorities = peers
 	}
-	s.votingAuthConfigs = configs
+	s.votingAuthConfigs = append(s.votingAuthConfigs, configs...)
+	return nil
+}
+
+func (s *kimchi) genBadVotingAuthoritiesCfg(numAuthorities int) error {
+	parameters := &vConfig.Parameters{} // XXX all nil params means bad votes
+	configs := []*vConfig.Config{}
+
+	// initial generation of key material for each authority
+	peersMap := make(map[[eddsa.PublicKeySize]byte]*vConfig.AuthorityPeer)
+	for i := 0; i < numAuthorities; i++ {
+		cfg := new(vConfig.Config)
+		cfg.Logging = &vConfig.Logging{
+			Disable: false,
+			File:    "katzenpost.log",
+			Level:   "DEBUG",
+		}
+		cfg.Parameters = parameters
+		cfg.Authority = &vConfig.Authority{
+			Identifier: fmt.Sprintf("authority-%v.example.org", i),
+			Addresses:  []string{fmt.Sprintf("127.0.0.1:%d", s.lastPort)},
+			DataDir:    filepath.Join(s.baseDir, fmt.Sprintf("authority%d", i)),
+		}
+		s.lastPort += 1
+		privateIdentityKey, err := eddsa.NewKeypair(rand.Reader)
+		if err != nil {
+			return err
+		}
+		cfg.Debug = &vConfig.Debug{
+			IdentityKey:      privateIdentityKey,
+			Layers:           3,
+			MinNodesPerLayer: 1,
+			GenerateOnly:     false,
+		}
+		configs = append(configs, cfg)
+		authorityPeer := &vConfig.AuthorityPeer{
+			IdentityPublicKey: cfg.Debug.IdentityKey.PublicKey(),
+			LinkPublicKey:     cfg.Debug.IdentityKey.PublicKey().ToECDH(),
+			Addresses:         cfg.Authority.Addresses,
+		}
+		peersMap[cfg.Debug.IdentityKey.PublicKey().ByteArray()] = authorityPeer
+	}
+
+	// tell each authority about it's peers
+	for i := 0; i < numAuthorities; i++ {
+		peers := []*vConfig.AuthorityPeer{}
+		for id, peer := range peersMap {
+			if !bytes.Equal(id[:], configs[i].Debug.IdentityKey.PublicKey().Bytes()) {
+				peers = append(peers, peer)
+			}
+		}
+		configs[i].Authorities = peers
+	}
+	s.votingAuthConfigs = append(s.votingAuthConfigs, configs...)
 	return nil
 }
 
@@ -340,12 +397,12 @@ func (s *kimchi) logTailer(prefix, path string) {
 	}
 }
 
-func (s *kimchi) makeClient(t *testing.T, baseDir, user, provider string, privateKey *ecdh.PrivateKey, isVoting bool) *client.Client {
-	assert := assert.New(t)
-
+func (s *kimchi) makeClient(baseDir, user, provider string, privateKey *ecdh.PrivateKey, isVoting bool) *client.Client {
 	dataDir := filepath.Join(baseDir, fmt.Sprintf("client_%s", user))
 	err := utils.MkDataDir(dataDir)
-	assert.NoError(err)
+	if err != nil {
+		panic("wtf")
+	}
 	cfg := cConfig.Config{
 		UpstreamProxy: &cConfig.UpstreamProxy{
 			Type: "none",
@@ -372,10 +429,14 @@ func (s *kimchi) makeClient(t *testing.T, baseDir, user, provider string, privat
 	}
 
 	err = cfg.FixupAndValidate()
-	assert.NoError(err)
+	if err != nil {
+		panic("wtf")
+	}
 
 	c, err := client.New(&cfg)
-	assert.NoError(err)
+	if err != nil {
+		panic("wtf")
+	}
 
 	return c
 }
@@ -406,7 +467,7 @@ func TestNaiveBasicVotingAuth(t *testing.T) {
 	}
 
 	// Generate the authority configs
-	err = s.genVotingAuthoritiesCfg(votingNum)
+	err = s.genGoodVotingAuthoritiesCfg(votingNum)
 	assert.NoError(err)
 
 	// Generate the provider configs.
@@ -452,7 +513,7 @@ func TestNaiveBasicVotingAuth(t *testing.T) {
 	assert.NoError(err)
 
 	// Alice connects to her Provider.
-	aliceClient := s.makeClient(t, s.baseDir, user, s.nodeConfigs[0].Server.Identifier, alicePrivateKey, true)
+	aliceClient := s.makeClient(s.baseDir, user, s.nodeConfigs[0].Server.Identifier, alicePrivateKey, true)
 	_, err = aliceClient.NewSession()
 	assert.NoError(err)
 
@@ -476,4 +537,174 @@ func TestNaiveBasicVotingAuth(t *testing.T) {
 	}
 	s.Wait()
 	log.Printf("Terminated.")
+}
+
+func mixnetWithGoodBadAuthorities(input BadVotingAuthTestInput) bool {
+	var err error
+	voting := true
+
+	s := newKimchi(basePort)
+
+	// TODO: Someone that cares enough can use a config file for this, but
+	// this is ultimately just for testing.
+
+	// Create the base directory and bring logging online.
+	s.baseDir, err = ioutil.TempDir("", "kimchi")
+	if err != nil {
+		panic("wtf")
+	}
+
+	err = s.initLogging()
+	if err != nil {
+		panic("wtf")
+	}
+
+	now, elapsed, till := epochtime.Now()
+	log.Printf("Epoch: %v (Elapsed: %v, Till: %v)", now, elapsed, till)
+	if till < epochtime.Period-(3600*time.Second) {
+		log.Printf("WARNING: Descriptor publication for the next epoch will FAIL.")
+	}
+
+	// Generate the authority configs
+	err = s.genGoodVotingAuthoritiesCfg(input.Good)
+	if err != nil {
+		panic("wtf")
+	}
+	err = s.genBadVotingAuthoritiesCfg(input.Bad)
+	if err != nil {
+		panic("wtf")
+	}
+
+	// Generate the provider configs.
+	for i := 0; i < nrProviders; i++ {
+		if err = s.genNodeConfig(true, voting); err != nil {
+			log.Fatalf("Failed to generate provider config: %v", err)
+		}
+	}
+
+	// Generate the node configs.
+	for i := 0; i < nrNodes; i++ {
+		if err = s.genNodeConfig(false, voting); err != nil {
+			log.Fatalf("Failed to generate node config: %v", err)
+		}
+	}
+
+	providerWhitelist, mixWhitelist, err := s.generateVotingWhitelist()
+	if err != nil {
+		panic("wtf")
+	}
+
+	for _, aCfg := range s.votingAuthConfigs {
+		aCfg.Mixes = mixWhitelist
+		aCfg.Providers = providerWhitelist
+	}
+	err = s.runVotingAuthorities()
+	if err != nil {
+		panic("wtf")
+	}
+
+	// Launch all the nodes.
+	for _, v := range s.nodeConfigs {
+		v.FixupAndValidate()
+		svr, err := nServer.New(v)
+		if err != nil {
+			panic("wtf")
+		}
+
+		s.servers = append(s.servers, svr)
+		go s.logTailer(v.Server.Identifier, filepath.Join(v.Server.DataDir, v.Logging.File))
+	}
+
+	alicePrivateKey, err := ecdh.NewKeypair(rand.Reader)
+	if err != nil {
+		panic("wtf")
+	}
+
+	// Initialize Alice's mailproxy.
+	user := "alice"
+	err = s.thwackUser(s.nodeConfigs[0], user, alicePrivateKey.PublicKey())
+	if err != nil {
+		panic("wtf")
+	}
+
+	// Alice connects to her Provider.
+	aliceClient := s.makeClient(s.baseDir, user, s.nodeConfigs[0].Server.Identifier, alicePrivateKey, true)
+	_, err = aliceClient.NewSession()
+	if err != nil {
+		return true
+	}
+
+	// Shutdown code path.
+	for _, svr := range s.servers {
+		svr.Shutdown()
+	}
+	log.Printf("All servers halted.")
+
+	// Wait for the log tailers to return.  This typically won't re-log the
+	// shutdown sequence, but if people need the logs from that, they will
+	// be in each `DataDir` as needed.
+	for _, t := range s.tails {
+		t.StopAtEOF()
+	}
+	s.Wait()
+	log.Printf("Terminated.")
+	return false
+}
+
+type BadVotingAuthTestInput struct {
+	Good int
+	Bad  int
+}
+
+func (b BadVotingAuthTestInput) Generate(r *mrand.Rand, size int) reflect.Value {
+	fmt.Println("Generate")
+	i := BadVotingAuthTestInput{}
+	for {
+		max := 5 // XXX
+		i.Good = mrand.Intn(max)
+		i.Bad = mrand.Intn(max)
+		if !thresholdProperty(i) {
+			fmt.Printf("testing with: good %d/bad %d\n", i.Good, i.Bad)
+			break
+		}
+	}
+	return reflect.ValueOf(i)
+}
+
+func thresholdProperty(input BadVotingAuthTestInput) bool {
+	nodes := input.Good + input.Bad
+	if input.Good >= nodes/2+1 {
+		return true
+	}
+	return false
+}
+
+func testTimeoutVotingThreshold(timeout time.Duration) func(BadVotingAuthTestInput) bool {
+	fmt.Println("testTimeoutVotingThreshold")
+	ctx, _ := context.WithTimeout(context.Background(), timeout)
+	ch := make(chan bool, 0)
+	return func(input BadVotingAuthTestInput) bool {
+		go func() {
+			ret := mixnetWithGoodBadAuthorities(input)
+			ch <- ret
+		}()
+		select {
+		case ret := <-ch:
+			return ret
+		case <-ctx.Done():
+			fmt.Println(ctx.Err()) // prints "context deadline exceeded"
+			return true
+		}
+	}
+}
+
+// TestVotingThresholdProperty tests that consensus is not reached
+// when there are not a threshold number of good authorities.
+func TestVotingThresholdProperty(t *testing.T) {
+	cfg := quick.Config{
+		MaxCount: 10, // XXX how many tests?
+	}
+	if err := quick.Check(testTimeoutVotingThreshold(time.Hour*time.Duration(2)), &cfg); err != nil {
+		t.Error(err)
+	}
 }
