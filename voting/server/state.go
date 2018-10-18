@@ -45,7 +45,7 @@ import (
 	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/wire/commands"
 	"github.com/katzenpost/core/worker"
-	"golang.org/x/crypto/sha3"
+	"golang.org/x/crypto/blake2b"
 	"gopkg.in/op/go-logging.v1"
 )
 
@@ -330,9 +330,9 @@ func (s *SharedRandom) Commit(epoch uint64) ([]byte, error) {
 	s.reveal = make([]byte, s11n.SharedRandomLength)
 	binary.BigEndian.PutUint64(s.reveal, epoch)
 	binary.BigEndian.PutUint64(s.commit, epoch)
-	reveal := sha3.Sum256(rn)
+	reveal := blake2b.Sum256(rn)
 	copy(s.reveal[8:], reveal[:])
-	commit := sha3.Sum256(s.reveal)
+	commit := blake2b.Sum256(s.reveal)
 	copy(s.commit[8:], commit[:])
 	return s.commit, nil
 }
@@ -354,7 +354,7 @@ func (s *SharedRandom) Verify(reveal []byte) bool {
 		return false
 	}
 	epoch := binary.BigEndian.Uint64(reveal[0:8])
-	allegedCommit := sha3.Sum256(reveal)
+	allegedCommit := blake2b.Sum256(reveal)
 	if epoch == s.epoch {
 		if bytes.Equal(s.commit[8:], allegedCommit[:]) {
 			return true
@@ -762,7 +762,10 @@ func (s *state) computeSharedRandom(epoch uint64) ([]byte, error) {
 	}
 
 	reveals := make([]Reveal, 0)
-	srv := sha3.New256()
+	srv, err := blake2b.New256(nil)
+	if err != nil {
+		return nil, err
+	}
 	srv.Write([]byte("shared-random"))
 	srv.Write(epochToBytes(epoch))
 
