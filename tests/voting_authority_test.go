@@ -50,9 +50,9 @@ const (
 	pingService   = "loop"
 	logFile       = "kimchi.log"
 	basePort      = 30000
-	nrNodes       = 6
-	nrProviders   = 2
-	nrAuthorities = 10
+	nrNodes       = 3
+	nrProviders   = 1
+	nrAuthorities = 3
 )
 
 var tailConfig = tail.Config{
