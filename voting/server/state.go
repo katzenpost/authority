@@ -835,7 +835,6 @@ func (s *state) tabulate(epoch uint64) {
 	s.certificates[epoch][s.identityPubKey()] = signed
 	if raw, err := cert.GetCertified(signed); err == nil {
 		s.log.Debugf("Document for epoch %v saved: %s", epoch, raw)
-		s.log.Debugf("sha256(certified): %s", sha256b64(raw))
 	}
 	// send our vote to the other authorities!
 	s.sendVoteToAuthorities([]byte(signed), epoch)
@@ -1117,7 +1116,6 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 			s.certificates[s.votingEpoch][vote.PublicKey.ByteArray()] = vote.Payload
 			if raw, err := cert.GetCertified(vote.Payload); err == nil {
 				s.log.Debugf("Certificate for epoch %v saved: %s", vote.Epoch, raw)
-				s.log.Debugf("sha256(certified): %s", sha256b64(raw))
 			}
 			resp.ErrorCode = commands.VoteOk
 			return &resp
@@ -1460,9 +1458,4 @@ func sortNodesByPublicKey(nodes []*descriptor) {
 		return string(pk[:])
 	}
 	sort.Slice(nodes, func(i, j int) bool { return dTos(nodes[i]) < dTos(nodes[j]) })
-}
-
-func sha256b64(raw []byte) string {
-	var hash [32]byte = sha3.Sum256(raw)
-	return base64.StdEncoding.EncodeToString(hash[:])
 }
