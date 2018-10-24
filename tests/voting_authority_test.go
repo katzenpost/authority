@@ -510,25 +510,6 @@ func TestNaiveBasicVotingAuth(t *testing.T) {
 		go s.logTailer(v.Server.Identifier, filepath.Join(v.Server.DataDir, v.Logging.File))
 	}
 
-	alicePrivateKey, err := ecdh.NewKeypair(rand.Reader)
-	assert.NoError(err)
-
-	// Initialize Alice's mailproxy.
-	user := "alice"
-	err = s.thwackUser(s.nodeConfigs[0], user, alicePrivateKey.PublicKey())
-	assert.NoError(err)
-
-	// Alice connects to her Provider.
-	aliceClient := s.makeClient(s.baseDir, user, s.nodeConfigs[0].Server.Identifier, alicePrivateKey, true)
-	_, err = aliceClient.NewSession()
-	assert.NoError(err)
-
-	//serviceDesc, err := aliceSession.GetService(pingService)
-	//assert.NoError(err)
-	//fmt.Println(serviceDesc.Name, serviceDesc.Provider)
-
-	// XXX Alice does other stuff...
-
 	// Shutdown code path.
 	for _, svr := range s.servers {
 		svr.Shutdown()
@@ -619,25 +600,6 @@ func mixnetWithGoodBadAuthorities(input BadVotingAuthTestInput) bool {
 
 		s.servers = append(s.servers, svr)
 		go s.logTailer(v.Server.Identifier, filepath.Join(v.Server.DataDir, v.Logging.File))
-	}
-
-	alicePrivateKey, err := ecdh.NewKeypair(rand.Reader)
-	if err != nil {
-		panic("wtf")
-	}
-
-	// Initialize Alice's mailproxy.
-	user := "alice"
-	err = s.thwackUser(s.nodeConfigs[0], user, alicePrivateKey.PublicKey())
-	if err != nil {
-		panic("wtf")
-	}
-
-	// Alice connects to her Provider.
-	aliceClient := s.makeClient(s.baseDir, user, s.nodeConfigs[0].Server.Identifier, alicePrivateKey, true)
-	_, err = aliceClient.NewSession()
-	if err != nil {
-		return true
 	}
 
 	// Shutdown code path.
