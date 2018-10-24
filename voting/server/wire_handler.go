@@ -226,11 +226,13 @@ func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 		return false
 	}
 
-	linkPk := a.peerIdentityKey.ToECDH()
+	linkPk, ok := a.s.state.peerLinkKeys[pk]
+	if !ok {
+		a.s.log.Debugf("Rejecting authentication, peer's link key not found.")
+	}
 	if !linkPk.Equal(creds.PublicKey) {
 		a.s.log.Debugf("Rejecting authentication, public key mismatch.")
 		return false
 	}
-
 	return true
 }
