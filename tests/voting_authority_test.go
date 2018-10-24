@@ -143,6 +143,7 @@ func (s *kimchi) genGoodVotingAuthoritiesCfg(numAuthorities int) error {
 		}
 		cfg.Debug = &vConfig.Debug{
 			IdentityKey:      privateIdentityKey,
+			LinkKey:          privateIdentityKey.ToECDH(),
 			Layers:           3,
 			MinNodesPerLayer: 1,
 			GenerateOnly:     false,
@@ -150,7 +151,7 @@ func (s *kimchi) genGoodVotingAuthoritiesCfg(numAuthorities int) error {
 		configs = append(configs, cfg)
 		authorityPeer := &vConfig.AuthorityPeer{
 			IdentityPublicKey: cfg.Debug.IdentityKey.PublicKey(),
-			LinkPublicKey:     cfg.Debug.IdentityKey.PublicKey().ToECDH(),
+			LinkPublicKey:     cfg.Debug.LinkKey.PublicKey(),
 			Addresses:         cfg.Authority.Addresses,
 		}
 		peersMap[cfg.Debug.IdentityKey.PublicKey().ByteArray()] = authorityPeer
@@ -196,6 +197,7 @@ func (s *kimchi) genBadVotingAuthoritiesCfg(numAuthorities int) error {
 		}
 		cfg.Debug = &vConfig.Debug{
 			IdentityKey:      privateIdentityKey,
+			LinkKey:          privateIdentityKey.ToECDH(),
 			Layers:           3,
 			MinNodesPerLayer: 1,
 			GenerateOnly:     false,
@@ -203,7 +205,7 @@ func (s *kimchi) genBadVotingAuthoritiesCfg(numAuthorities int) error {
 		configs = append(configs, cfg)
 		authorityPeer := &vConfig.AuthorityPeer{
 			IdentityPublicKey: cfg.Debug.IdentityKey.PublicKey(),
-			LinkPublicKey:     cfg.Debug.IdentityKey.PublicKey().ToECDH(),
+			LinkPublicKey:     cfg.Debug.LinkKey.PublicKey(),
 			Addresses:         cfg.Authority.Addresses,
 		}
 		peersMap[cfg.Debug.IdentityKey.PublicKey().ByteArray()] = authorityPeer
@@ -261,7 +263,7 @@ func (s *kimchi) genNodeConfig(isProvider bool, isVoting bool) error {
 				return err
 			}
 
-			linkKey, err := peer.Debug.IdentityKey.PublicKey().ToECDH().MarshalText()
+			linkKey, err := peer.Debug.LinkKey.PublicKey().MarshalText()
 			if err != nil {
 				return err
 			}
