@@ -204,10 +204,9 @@ type wireAuthenticator struct {
 }
 
 func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
-	// Just allow clients to connect with fetch access.
 	switch len(creds.AdditionalData) {
 	case 0:
-		return true
+		return true // Allow clients to connect with fetch access.
 	case eddsa.PublicKeySize:
 	default:
 		a.s.log.Debugf("Rejecting authentication, invalid AD size.")
@@ -221,11 +220,14 @@ func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 	}
 
 	pk := a.peerIdentityKey.ByteArray()
-	if !(a.s.state.authorizedMixes[pk] || a.s.state.authorizedProviders[pk] != "") {
-		a.s.log.Debugf("Rejecting authentication, not a valid mix/provider.")
-		return false
+	isAuthorized, ok := a.s.state.authorizedMixes[pk]
+	if isAuthoritzed && ok {
+		return true
 	}
-
+	val, ok := a.s.state.authorizedProviders[pk]
+	if ok || val != "" {
+		return true
+	}
 	linkPk, ok := a.s.state.peerLinkKeys[pk]
 	if !ok {
 		a.s.log.Debugf("Rejecting authentication, peer's link key not found.")
