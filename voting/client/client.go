@@ -70,6 +70,9 @@ type Config struct {
 	// Authorities is the set of Directory Authority servers.
 	Authorities []*config.AuthorityPeer
 
+	// LinkPrivateKey is an optional link layer key used when calling Post.
+	LinkPrivateKey *ecdh.PrivateKey
+
 	// DialContextFn is the optional alternative Dialer.DialContext function
 	// to be used when creating outgoing network connections.
 	DialContextFn func(ctx context.Context, network, address string) (net.Conn, error)
@@ -226,15 +229,19 @@ func (p *connector) randomPeerRoundTrip(ctx context.Context, linkKey *ecdh.Priva
 
 // Client is a PKI client.
 type Client struct {
-	cfg  *Config
-	log  *logging.Logger
-	pool *connector
+	cfg       *Config
+	log       *logging.Logger
+	pool      *connector
 	verifiers []cert.Verifier
 	threshold int
 }
 
 // Post posts the node's descriptor to the PKI for the provided epoch.
 func (c *Client) Post(ctx context.Context, epoch uint64, signingKey *eddsa.PrivateKey, d *pki.MixDescriptor) error {
+	// Check that we are configured with a link private key.
+	if c.cfg.LinkPrivateKey == nil {
+		return errors.New("voting/Client: MUST be configured with link private key in order to Post.")
+	}
 	// Ensure that the descriptor we are about to post is well formed.
 	if err := s11n.IsDescriptorWellFormed(d, epoch); err != nil {
 		return err
@@ -244,15 +251,12 @@ func (c *Client) Post(ctx context.Context, epoch uint64, signingKey *eddsa.Priva
 	if err != nil {
 		return err
 	}
-	// Convert the link key to an ECDH keypair.
-	linkKey := signingKey.ToECDH()
-	defer linkKey.Reset()
 	// Dispatch the post_descriptor command.
 	cmd := &commands.PostDescriptor{
 		Epoch:   epoch,
 		Payload: []byte(signed),
 	}
-	responses, err := c.pool.allPeersRoundTrip(ctx, linkKey, signingKey.PublicKey(), cmd)
+	responses, err := c.pool.allPeersRoundTrip(ctx, c.cfg.LinkPrivateKey, signingKey.PublicKey(), cmd)
 	if err != nil {
 		return err
 	}
