@@ -77,6 +77,7 @@ type kimchi struct {
 	logWriter io.Writer
 
 	votingAuthConfigs []*vConfig.Config
+	clientAuthConfig *cConfig.VotingAuthority
 
 	nodeConfigs []*sConfig.Config
 	lastPort    uint16
@@ -93,6 +94,7 @@ func newKimchi(basePort int) *kimchi {
 		lastPort:          uint16(basePort + 1),
 		nodeConfigs:       make([]*sConfig.Config, 0),
 		votingAuthConfigs: make([]*vConfig.Config, 0),
+		clientAuthConfig:  new(cConfig.VotingAuthority),
 	}
 	return k
 }
@@ -155,6 +157,8 @@ func (s *kimchi) genGoodVotingAuthoritiesCfg(numAuthorities int) error {
 			Addresses:         cfg.Authority.Addresses,
 		}
 		peersMap[cfg.Debug.IdentityKey.PublicKey().ByteArray()] = authorityPeer
+		// Add the peer to the client configuration
+		s.clientAuthConfig.Peers = append(s.clientAuthConfig.Peers, authorityPeer)
 	}
 
 	// tell each authority about it's peers
@@ -209,6 +213,8 @@ func (s *kimchi) genBadVotingAuthoritiesCfg(numAuthorities int) error {
 			Addresses:         cfg.Authority.Addresses,
 		}
 		peersMap[cfg.Debug.IdentityKey.PublicKey().ByteArray()] = authorityPeer
+		// Add the peer to the client configuration
+		s.clientAuthConfig.Peers = append(s.clientAuthConfig.Peers, authorityPeer)
 	}
 
 	// tell each authority about it's peers
@@ -420,9 +426,7 @@ func (s *kimchi) makeClient(baseDir, user, provider string, privateKey *ecdh.Pri
 		Debug: &cConfig.Debug{
 			InitialMaxPKIRetrievalDelay: 266,
 		},
-		VotingAuthority: &cConfig.VotingAuthority{
-			Peers: s.votingAuthConfigs[0].Authorities,
-		},
+		VotingAuthority: s.clientAuthConfig,
 		Account: &cConfig.Account{
 			User:     user,
 			Provider: provider,
