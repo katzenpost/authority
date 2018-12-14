@@ -151,7 +151,15 @@ func (s *state) fsm() <-chan time.Time {
 		s.state = stateAcceptDescriptor
 		sleep = mixPublishDeadline - elapsed
 	case stateAcceptDescriptor:
-		if !s.hasEnoughDescriptors(s.descriptors[s.votingEpoch]) {
+		// Check and see if there was already a valid consensus for this epoch from other peers
+		for {
+			if d := s.documents[s.votingEpoch]; d != nil {
+				s.votingEpoch++
+			} else {
+				break
+			}
+		}
+		if !s.hasEnoughDescriptors(s.descriptors[s.votingEpoch]) || elapsed > authorityVoteDeadline {
 			s.log.Debugf("Not voting because insufficient descriptors uploaded for epoch %d!", s.votingEpoch)
 			sleep = nextEpoch
 			s.votingEpoch = epoch + 2 // wait until next epoch begins and bootstrap
