@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/jonboulle/clockwork"
 	"github.com/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
@@ -49,6 +50,7 @@ type Server struct {
 	logBackend *log.Backend
 	log        *logging.Logger
 
+	clock     clockwork.Clock
 	state     *state
 	listeners []net.Listener
 
@@ -181,6 +183,7 @@ func (s *Server) halt() {
 // configuration.
 func New(cfg *config.Config) (*Server, error) {
 	s := new(Server)
+	s.clock = clockwork.NewRealClock()
 	s.cfg = cfg
 	s.fatalErrCh = make(chan error)
 	s.haltedCh = make(chan interface{})
