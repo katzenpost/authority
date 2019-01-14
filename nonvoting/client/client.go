@@ -21,6 +21,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"encoding/base64"
 	"fmt"
 	"net"
 
@@ -84,7 +85,8 @@ func (c *client) Post(ctx context.Context, epoch uint64, signingKey *eddsa.Priva
 	if err != nil {
 		return err
 	}
-	c.log.Debugf("Signed descriptor: '%v'", signed)
+
+	c.log.Debugf("Signed descriptor: '%s'", base64.StdEncoding.EncodeToString(signed))
 
 	// Convert the link key to an ECDH keypair.
 	linkKey := signingKey.ToECDH()

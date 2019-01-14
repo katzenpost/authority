@@ -237,7 +237,7 @@ func (s *state) consense(epoch uint64) {
 				s.documents[epoch] = &document{doc: pDoc, raw: c}
 				s.log.Noticef("Consensus made for epoch %d with %d/%d signatures", epoch, len(good), len(s.verifiers))
 				for _, g := range good {
-					id := base64.StdEncoding.EncodeToString(g.Identity())
+					id := BytesToPrintString(g.Identity())
 					s.log.Noticef("Consensus signed by %s", id)
 				}
 				return
@@ -644,7 +644,7 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 		// The votes have already been validated.
 
 		if _, ok := s.reveals[epoch][pk]; !ok {
-			s.log.Errorf("Skipping vote from Authority %s who failed to reveal", pk)
+			s.log.Errorf("Skipping vote from Authority %s who failed to reveal", NodeIDToPrintString(pk))
 			continue
 		}
 
@@ -653,11 +653,11 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 		srv.SetCommit(voteDoc.doc.SharedRandomCommit)
 		r := s.reveals[epoch][pk]
 		if len(r) != s11n.SharedRandomLength {
-			s.log.Errorf("Skipping vote from Authority %v with incorrect Reveal length %d :%v", pk, len(r), r)
+			s.log.Errorf("Skipping vote from Authority %s with incorrect Reveal length %d :%v", NodeIDToPrintString(pk), len(r), r)
 			continue
 		}
 		if !srv.Verify(r) {
-			s.log.Errorf("Skipping vote from Authority %v with incorrect Reveal! %v", pk, r)
+			s.log.Errorf("Skipping vote from Authority %s with incorrect Reveal! %v", NodeIDToPrintString(pk), r)
 			continue
 		}
 
@@ -665,7 +665,7 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 		ed.FromBytes(pk[:])
 		vote, err := s11n.FromPayload(ed, voteDoc.raw)
 		if err != nil {
-			s.log.Errorf("Skipping vote from Authority that failed to decode?! %v", err)
+			s.log.Errorf("Skipping vote from Authority %s that failed to decode?! %v", NodeIDToPrintString(pk), err)
 			continue
 		}
 		// serialize the vote parameters and tally these as well.
@@ -681,7 +681,7 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 		e := gob.NewEncoder(&b)
 		err = e.Encode(params)
 		if err != nil {
-			s.log.Errorf("Skipping vote from Authority whose MixParameters failed to encode?! %v", err)
+			s.log.Errorf("Skipping vote from Authority %s whose MixParameters failed to encode?! %v", NodeIDToPrintString(pk), err)
 			continue
 		}
 		bs := b.String()
@@ -1165,7 +1165,7 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 		// If the descriptor changes, then it will be rejected to prevent
 		// nodes from reneging on uploads.
 		if !bytes.Equal(d.raw, rawDesc) {
-			return fmt.Errorf("state: Node %v: Conflicting descriptor for epoch %v", desc.IdentityKey, epoch)
+			return fmt.Errorf("state: Node %s: Conflicting descriptor for epoch %v", NodeIDToPrintString(pk), epoch)
 		}
 
 		// Redundant uploads that don't change are harmless.
@@ -1176,7 +1176,7 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 	if s.documents[epoch] != nil {
 		// If there is a document already, the descriptor is late, and will
 		// never appear in a document, so reject it.
-		return fmt.Errorf("state: Node %v: Late descriptor upload for for epoch %v", desc.IdentityKey, epoch)
+		return fmt.Errorf("state: Node %s: Late descriptor upload for for epoch %v", NodeIDToPrintString(pk), epoch)
 	}
 
 	// Persist the raw descriptor to disk.
@@ -1199,8 +1199,7 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 	d.raw = rawDesc
 	m[pk] = d
 
-	id := base64.StdEncoding.EncodeToString(desc.IdentityKey.Bytes())
-	s.log.Debugf("Node %s: Sucessfully submitted descriptor for epoch %v.", id, epoch)
+	s.log.Debugf("Node %s: Sucessfully submitted descriptor for epoch %v.", NodeIDToPrintString(pk), epoch)
 	s.onUpdate()
 	return nil
 }
@@ -1489,4 +1488,14 @@ func sortNodesByPublicKey(nodes []*descriptor) {
 func sha256b64(raw []byte) string {
 	var hash [32]byte = sha3.Sum256(raw)
 	return base64.StdEncoding.EncodeToString(hash[:])
+}
+
+// NodeIDToPrintString pretty-prints a node identifier.
+func NodeIDToPrintString(raw [32]byte) string {
+	return base64.StdEncoding.EncodeToString(raw[:])
+}
+
+// BytesToPrintString pretty-prints a byte slice.
+func BytesToPrintString(b []byte) string {
+	return base64.StdEncoding.EncodeToString(b)
 }
