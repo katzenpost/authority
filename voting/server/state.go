@@ -33,6 +33,7 @@ import (
 	"time"
 
 	bolt "github.com/coreos/bbolt"
+	"github.com/jonboulle/clockwork"
 	"github.com/katzenpost/authority/internal/s11n"
 	"github.com/katzenpost/authority/voting/client"
 	"github.com/katzenpost/authority/voting/server/config"
@@ -83,10 +84,10 @@ type state struct {
 	sync.RWMutex
 	worker.Worker
 
-	s   *Server
-	log *logging.Logger
-
-	db *bolt.DB
+	clock clockwork.Clock
+	s     *Server
+	log   *logging.Logger
+	db    *bolt.DB
 
 	authorizedMixes       map[[eddsa.PublicKeySize]byte]bool
 	authorizedProviders   map[[eddsa.PublicKeySize]byte]string
@@ -140,7 +141,7 @@ func (s *state) worker() {
 func (s *state) fsm() <-chan time.Time {
 	s.Lock()
 	var sleep time.Duration
-	epoch, elapsed, nextEpoch := epochtime.Now()
+	epoch, elapsed, nextEpoch := epochtime.ClockNow(s.clock)
 	s.log.Debugf("Current epoch %d", epoch)
 
 	switch s.state {
@@ -205,7 +206,7 @@ func (s *state) fsm() <-chan time.Time {
 	}
 	s.log.Debugf("authority: FSM in state %v until %s", s.state, sleep)
 	s.Unlock()
-	return time.After(sleep)
+	return s.clock.After(sleep)
 }
 
 func (s *state) consense(epoch uint64) {
@@ -372,8 +373,8 @@ func (s *SharedRandom) Reveal() []byte {
 func (s *state) reveal(epoch uint64) {
 	if reveal, ok := s.reveals[epoch][s.identityPubKey()]; ok {
 		// Reveals are only valid until the end of voting round
-		_, _, till := epochtime.Now()
-		revealExpiration := time.Now().Add(till).Unix()
+		_, _, till := epochtime.ClockNow(s.clock)
+		revealExpiration := s.clock.Now().Add(till).Unix()
 		signed, err := cert.Sign(s.s.identityKey, reveal, revealExpiration)
 		if err != nil {
 			s.s.fatalErrCh <- err
@@ -959,7 +960,7 @@ func (s *state) pruneDocuments() {
 	// be added.
 	const preserveForPastEpochs = 3
 
-	now, _, _ := epochtime.Now()
+	now, _, _ := epochtime.ClockNow(s.clock)
 	cmpEpoch := now - preserveForPastEpochs
 
 	for e := range s.documents {
@@ -1216,7 +1217,7 @@ func (s *state) documentForEpoch(epoch uint64) ([]byte, error) {
 	}
 
 	// Otherwise, return an error based on the time.
-	now, _, till := epochtime.Now()
+	now, _, till := epochtime.ClockNow(s.clock)
 	switch epoch {
 	case now:
 		// Check to see if we are doing a bootstrap, and it's possible that
@@ -1276,7 +1277,7 @@ func (s *state) restorePersistence() error {
 			}
 
 			// Figure out which epochs to restore for.
-			now, _, _ := epochtime.Now()
+			now, _, _ := epochtime.ClockNow(s.clock)
 			epochs := []uint64{now - 1, now, now + 1}
 
 			// Restore the documents and descriptors.
@@ -1359,6 +1360,7 @@ func newState(s *Server) (*state, error) {
 	const dbFile = "persistence.db"
 
 	st := new(state)
+	st.clock = clockwork.NewRealClock()
 	st.s = s
 	st.log = s.logBackend.GetLogger("state")
 
@@ -1423,7 +1425,7 @@ func newState(s *Server) (*state, error) {
 	//  * (Checked in worker) *All* nodes publish a descriptor.
 	//
 	// This could be relaxed a bit, but it's primarily intended for debugging.
-	epoch, _, till := epochtime.Now()
+	epoch, _, till := epochtime.ClockNow(st.clock)
 	if till < 1*time.Minute {
 		epoch++
 	}

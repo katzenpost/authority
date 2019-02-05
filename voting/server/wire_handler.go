@@ -58,7 +58,7 @@ func (s *Server) onConn(conn net.Conn) {
 	defer wireConn.Close()
 
 	// Handshake.
-	conn.SetDeadline(time.Now().Add(initialDeadline))
+	conn.SetDeadline(s.clock.Now().Add(initialDeadline))
 	if err = wireConn.Initialize(conn); err != nil {
 		s.log.Debugf("Peer %v: Failed session handshake: %v", rAddr, err)
 		return
@@ -86,7 +86,7 @@ func (s *Server) onConn(conn net.Conn) {
 
 	// Send the response, if any.
 	if resp != nil {
-		conn.SetDeadline(time.Now().Add(responseDeadline))
+		conn.SetDeadline(s.clock.Now().Add(responseDeadline))
 		if err = wireConn.SendCommand(resp); err != nil {
 			s.log.Debugf("Peer %v: Failed to send response: %v", rAddr, err)
 		}
@@ -177,7 +177,7 @@ func (s *Server) onPostDescriptor(rAddr net.Addr, cmd *commands.PostDescriptor, 
 	}
 
 	// Ensure the epoch is somewhat sane.
-	now, _, _ := epochtime.Now()
+	now, _, _ := epochtime.ClockNow(s.clock)
 	switch cmd.Epoch {
 	case now - 1, now, now + 1:
 		// Nodes will always publish the descriptor for the current epoch on
