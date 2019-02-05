@@ -181,9 +181,9 @@ func (s *Server) halt() {
 
 // New returns a new Server instance parameterized with the specific
 // configuration.
-func New(cfg *config.Config) (*Server, error) {
+func New(cfg *config.Config, c clockwork.Clock) (*Server, error) {
 	s := new(Server)
-	s.clock = clockwork.NewRealClock()
+	s.clock = c
 	s.cfg = cfg
 	s.fatalErrCh = make(chan error)
 	s.haltedCh = make(chan interface{})
