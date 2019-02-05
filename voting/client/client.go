@@ -22,7 +22,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	//mrand "math/rand"
 	"net"
 
 	"github.com/katzenpost/authority/internal/s11n"
@@ -209,8 +208,8 @@ func (p *connector) allPeersRoundTrip(ctx context.Context, linkKey *ecdh.Private
 func (p *connector) randomPeerRoundTrip(ctx context.Context, linkKey *ecdh.PrivateKey, cmd commands.Command) (commands.Command, error) {
 	doneCh := make(chan interface{})
 	defer close(doneCh)
-	//peerIndex := mrand.Intn(len(p.cfg.Authorities) - 1)
-	peerIndex := 0
+	r := rand.NewMath()
+	peerIndex := r.Intn(len(p.cfg.Authorities) - 1)
 
 	if len(p.cfg.Authorities) == 0 {
 		return nil, errors.New("error: zero Authorities specified in configuration")
