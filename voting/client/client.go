@@ -209,7 +209,7 @@ func (p *connector) randomPeerRoundTrip(ctx context.Context, linkKey *ecdh.Priva
 	doneCh := make(chan interface{})
 	defer close(doneCh)
 	r := rand.NewMath()
-	peerIndex := r.Intn(len(p.cfg.Authorities) - 1)
+	peerIndex := r.Intn(len(p.cfg.Authorities))
 
 	if len(p.cfg.Authorities) == 0 {
 		return nil, errors.New("error: zero Authorities specified in configuration")
