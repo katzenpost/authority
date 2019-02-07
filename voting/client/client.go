@@ -279,6 +279,8 @@ func (c *Client) Post(ctx context.Context, epoch uint64, signingKey *eddsa.Priva
 
 // Get returns the PKI document along with the raw serialized form for the provided epoch.
 func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, error) {
+	var err error
+	var resp commands.Command
 	c.log.Debugf("Get(ctx, %d)", epoch)
 
 	// Generate a random ecdh keypair to use for the link authentication.
@@ -294,7 +296,14 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 
 	// Dispatch the get_consensus command.
 	cmd := &commands.GetConsensus{Epoch: epoch}
-	resp, err := c.pool.randomPeerRoundTrip(ctx, linkKey, cmd)
+
+	// XXX: parametize retries?
+	for i := 0; i < 3; i++ {
+		resp, err = c.pool.randomPeerRoundTrip(ctx, linkKey, cmd)
+		if err == nil {
+			break
+		}
+	}
 	if err != nil {
 		return nil, nil, err
 	}
