@@ -79,8 +79,8 @@ func (s *state) Halt() {
 	s.Worker.Halt()
 
 	// Gracefully close the persistence store.
-	s.db.Sync()
-	s.db.Close()
+	_ = s.db.Sync()
+	_ = s.db.Close()
 }
 
 func (s *state) onUpdate() {
@@ -195,18 +195,20 @@ func (s *state) generateDocument(epoch uint64) {
 	doc := &s11n.Document{
 		Epoch:             epoch,
 		SendRatePerMinute: s.s.cfg.Parameters.SendRatePerMinute,
-		Mu:                s.s.cfg.Parameters.Mu,
-		MuMaxDelay:        s.s.cfg.Parameters.MuMaxDelay,
-		LambdaP:           s.s.cfg.Parameters.LambdaP,
-		LambdaPMaxDelay:   s.s.cfg.Parameters.LambdaPMaxDelay,
-		LambdaL:           s.s.cfg.Parameters.LambdaL,
-		LambdaLMaxDelay:   s.s.cfg.Parameters.LambdaLMaxDelay,
-		LambdaD:           s.s.cfg.Parameters.LambdaD,
-		LambdaDMaxDelay:   s.s.cfg.Parameters.LambdaDMaxDelay,
-		LambdaM:           s.s.cfg.Parameters.LambdaM,
-		LambdaMMaxDelay:   s.s.cfg.Parameters.LambdaMMaxDelay,
-		Topology:          topology,
-		Providers:         providers,
+		//Mu:                s.s.cfg.Parameters.Mu,
+		//MuMaxDelay:        s.s.cfg.Parameters.MuMaxDelay,
+		Mu:              s.s.cliCfg.Experiment.Mu,
+		MuMaxDelay:      s.s.cliCfg.Experiment.MuMaxDelay,
+		LambdaP:         s.s.cfg.Parameters.LambdaP,
+		LambdaPMaxDelay: s.s.cfg.Parameters.LambdaPMaxDelay,
+		LambdaL:         s.s.cfg.Parameters.LambdaL,
+		LambdaLMaxDelay: s.s.cfg.Parameters.LambdaLMaxDelay,
+		LambdaD:         s.s.cfg.Parameters.LambdaD,
+		LambdaDMaxDelay: s.s.cfg.Parameters.LambdaDMaxDelay,
+		LambdaM:         s.s.cfg.Parameters.LambdaM,
+		LambdaMMaxDelay: s.s.cfg.Parameters.LambdaMMaxDelay,
+		Topology:        topology,
+		Providers:       providers,
 	}
 	// For compatibliity with shared s11n implementation between voting
 	// and non-voting authority, add SharedRandomValue.
@@ -241,7 +243,7 @@ func (s *state) generateDocument(epoch uint64) {
 	// Persist the document to disk.
 	if err := s.db.Update(func(tx *bolt.Tx) error {
 		bkt := tx.Bucket([]byte(documentsBucket))
-		bkt.Put(epochToBytes(epoch), []byte(signed))
+		_ = bkt.Put(epochToBytes(epoch), []byte(signed))
 		return nil
 	}); err != nil {
 		// Persistence failures are FATAL.
@@ -422,7 +424,7 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 		if err != nil {
 			return err
 		}
-		eBkt.Put(pk[:], rawDesc)
+		_ = eBkt.Put(pk[:], rawDesc)
 		return nil
 	}); err != nil {
 		// Persistence failures are FATAL.
@@ -587,7 +589,7 @@ func (s *state) restorePersistence() error {
 		}
 
 		// We created a new database, so populate the new `metadata` bucket.
-		bkt.Put([]byte(versionKey), []byte{0})
+		_ = bkt.Put([]byte(versionKey), []byte{0})
 
 		return nil
 	})
@@ -623,7 +625,7 @@ func newState(s *Server) (*state, error) {
 		return nil, err
 	}
 	if err = st.restorePersistence(); err != nil {
-		st.db.Close()
+		_ = st.db.Close()
 		return nil, err
 	}
 

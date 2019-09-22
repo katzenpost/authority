@@ -24,6 +24,7 @@ package server
 import (
 	"errors"
 	"fmt"
+	cliConf "github.com/katzenpost/client/config"
 	"net"
 	"os"
 	"path/filepath"
@@ -45,7 +46,8 @@ var ErrGenerateOnly = errors.New("server: GenerateOnly set")
 type Server struct {
 	sync.WaitGroup
 
-	cfg *config.Config
+	cfg    *config.Config
+	cliCfg *cliConf.Config
 
 	identityKey *eddsa.PrivateKey
 	linkKey     *ecdh.PrivateKey
@@ -133,7 +135,7 @@ func (s *Server) listenWorker(l net.Listener) {
 	s.log.Noticef("Listening on: %v", addr)
 	defer func() {
 		s.log.Noticef("Stopping listening on: %v", addr)
-		l.Close()
+		_ = l.Close()
 		s.Done()
 	}()
 	for {
@@ -159,7 +161,7 @@ func (s *Server) halt() {
 	// Halt the listeners.
 	for idx, l := range s.listeners {
 		if l != nil {
-			l.Close()
+			_ = l.Close()
 		}
 		s.listeners[idx] = nil
 	}
@@ -183,9 +185,10 @@ func (s *Server) halt() {
 
 // New returns a new Server instance parameterized with the specific
 // configuration.
-func New(cfg *config.Config) (*Server, error) {
+func New(cfg *config.Config, cliCfg *cliConf.Config) (*Server, error) {
 	s := new(Server)
 	s.cfg = cfg
+	s.cliCfg = cliCfg
 	s.fatalErrCh = make(chan error)
 	s.haltedCh = make(chan interface{})
 
@@ -207,7 +210,7 @@ func New(cfg *config.Config) (*Server, error) {
 	if s.cfg.Debug.IdentityKey != nil {
 		s.log.Warning("IdentityKey should NOT be used for production deployments.")
 		s.identityKey = new(eddsa.PrivateKey)
-		s.identityKey.FromBytes(s.cfg.Debug.IdentityKey.Bytes())
+		_ = s.identityKey.FromBytes(s.cfg.Debug.IdentityKey.Bytes())
 	} else {
 		identityPrivateKeyFile := filepath.Join(s.cfg.Authority.DataDir, "identity.private.pem")
 		identityPublicKeyFile := filepath.Join(s.cfg.Authority.DataDir, "identity.public.pem")
