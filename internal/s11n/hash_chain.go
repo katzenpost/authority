@@ -106,12 +106,12 @@ func VerifyChain(chain []*Header, genesis *Header) (bool, error) {
 	return true, nil
 }
 
-func AppendChain(chain []*Header, payload []byte) error {
+func AppendChain(chain []*Header, payload []byte) ([]*Header, error) {
 	payloadHash := blake2b.Sum256(payload)
 	epoch, _, _ := epochtime.Now()
 	prevHash, err := chain[len(chain)-1].hash()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	link := Header{
 		Version:     HashChainHeaderVersion,
@@ -120,7 +120,7 @@ func AppendChain(chain []*Header, payload []byte) error {
 		PayloadHash: payloadHash[:],
 	}
 	chain = append(chain, &link)
-	return nil
+	return chain, nil
 }
 
 func init() {

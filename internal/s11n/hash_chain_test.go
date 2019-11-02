@@ -26,14 +26,20 @@ func TestHashChain(t *testing.T) {
 	require := require.New(t)
 
 	chain := NewChain()
-	err := AppendChain(chain, []byte("yo1"))
+	chain, err := AppendChain(chain, []byte("yo1"))
 	require.NoError(err)
-	err = AppendChain(chain, []byte("yo2"))
+	chain, err = AppendChain(chain, []byte("yo2"))
 	require.NoError(err)
-	err = AppendChain(chain, []byte("yo3"))
+	chain, err = AppendChain(chain, []byte("yo3"))
 	require.NoError(err)
 
 	ok, err := VerifyChain(chain, chain[0])
 	require.NoError(err)
 	require.True(ok)
+
+	for _, link := range chain {
+		bytes, err := link.ToBytes()
+		require.NoError(err)
+		t.Logf("element size %d", len(bytes))
+	}
 }
