@@ -67,8 +67,9 @@ type Document struct {
 	Topology  [][][]byte
 	Providers [][]byte
 
-	SharedRandomCommit []byte
-	SharedRandomValue  []byte
+	SharedRandomCommit      []byte
+	SharedRandomValue       []byte
+	WeeklySharedRandomValue []byte
 }
 
 // FromPayload deserializes, then verifies a Document, and returns the Document or error.
@@ -169,6 +170,13 @@ func VerifyAndParseDocument(b []byte, verifier cert.Verifier) (*pki.Document, er
 			return nil, fmt.Errorf("Document has invalid SharedRandomCommit")
 		}
 	}
+	if len(d.WeeklySharedRandomValue) != SharedRandomValueLength {
+		if len(d.WeeklySharedRandomValue) != 0 {
+			return nil, fmt.Errorf("Document has invalid WeeklySharedRandomValue")
+		} else if len(d.SharedRandomCommit) != SharedRandomLength {
+			return nil, fmt.Errorf("Document has invalid SharedRandomCommit")
+		}
+	}
 	if len(d.SharedRandomCommit) != SharedRandomLength {
 		if len(d.SharedRandomCommit) != 0 {
 			return nil, fmt.Errorf("Document has invalid SharedRandomCommit")
@@ -180,6 +188,7 @@ func VerifyAndParseDocument(b []byte, verifier cert.Verifier) (*pki.Document, er
 	doc := new(pki.Document)
 	doc.SharedRandomCommit = d.SharedRandomCommit
 	doc.SharedRandomValue = d.SharedRandomValue
+	doc.WeeklySharedRandomValue = d.WeeklySharedRandomValue
 	doc.Epoch = d.Epoch
 	doc.SendRatePerMinute = d.SendRatePerMinute
 	doc.Mu = d.Mu
