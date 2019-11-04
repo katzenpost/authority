@@ -291,23 +291,26 @@ func (s *state) getDocument(descriptors []*descriptor, params *config.Parameters
 		topology = s.generateRandomTopology(nodes, srv)
 	}
 
+	weeklySrv := s.getWeeklySharedRandomValue(s.votingEpoch, srv)
+
 	// Build the Document.
 	doc := &s11n.Document{
-		Epoch:             s.votingEpoch,
-		SendRatePerMinute: params.SendRatePerMinute,
-		Mu:                params.Mu,
-		MuMaxDelay:        params.MuMaxDelay,
-		LambdaP:           params.LambdaP,
-		LambdaPMaxDelay:   params.LambdaPMaxDelay,
-		LambdaL:           params.LambdaL,
-		LambdaLMaxDelay:   params.LambdaLMaxDelay,
-		LambdaD:           params.LambdaD,
-		LambdaDMaxDelay:   params.LambdaDMaxDelay,
-		LambdaM:           params.LambdaM,
-		LambdaMMaxDelay:   params.LambdaMMaxDelay,
-		Topology:          topology,
-		Providers:         providers,
-		SharedRandomValue: srv,
+		Epoch:                   s.votingEpoch,
+		SendRatePerMinute:       params.SendRatePerMinute,
+		Mu:                      params.Mu,
+		MuMaxDelay:              params.MuMaxDelay,
+		LambdaP:                 params.LambdaP,
+		LambdaPMaxDelay:         params.LambdaPMaxDelay,
+		LambdaL:                 params.LambdaL,
+		LambdaLMaxDelay:         params.LambdaLMaxDelay,
+		LambdaD:                 params.LambdaD,
+		LambdaDMaxDelay:         params.LambdaDMaxDelay,
+		LambdaM:                 params.LambdaM,
+		LambdaMMaxDelay:         params.LambdaMMaxDelay,
+		Topology:                topology,
+		Providers:               providers,
+		SharedRandomValue:       srv,
+		WeeklySharedRandomValue: weeklySrv,
 	}
 	return doc
 }
