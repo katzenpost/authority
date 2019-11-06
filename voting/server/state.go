@@ -25,6 +25,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"path/filepath"
 	"sort"
@@ -260,6 +261,38 @@ func (s *state) voted(epoch uint64) bool {
 	return false
 }
 
+func (s *state) getWeeklySharedRandomValue(epoch uint64, srv []byte) ([]byte, error) {
+	s.RLock()
+	defer s.RUnlock()
+	switch len(s.documents) {
+	case 0:
+		return srv, nil
+	default:
+		week := time.Duration(math.Abs(float64(time.Sunday-time.Now().Weekday()))) * 24 * time.Hour
+		history := time.Duration(len(s.documents)) * epochtime.Period
+		if history > week {
+			unixTime := time.Now().Add(-week).Unix()
+			firstWeeklyEpoch, _, _ := epochtime.FromUnix(unixTime)
+			doc, ok := s.documents[firstWeeklyEpoch]
+			if !ok {
+				return nil, errors.New("first weekly document not found")
+			}
+			return doc.doc.SharedRandomValue, nil
+		} else {
+			unixTime := time.Now().Add(-history).Unix()
+			firstHistoryEpoch, _, _ := epochtime.FromUnix(unixTime)
+			doc, ok := s.documents[firstHistoryEpoch]
+			if !ok {
+				return nil, errors.New("first historical document not found")
+			}
+			return doc.doc.SharedRandomValue, nil
+		}
+	}
+
+	// not reached
+	return nil, errors.New("this error is not reached")
+}
+
 func (s *state) getDocument(descriptors []*descriptor, params *config.Parameters, srv []byte) *s11n.Document {
 	// Carve out the descriptors between providers and nodes.
 	var providers [][]byte
@@ -291,7 +324,10 @@ func (s *state) getDocument(descriptors []*descriptor, params *config.Parameters
 		topology = s.generateRandomTopology(nodes, srv)
 	}
 
-	weeklySrv := s.getWeeklySharedRandomValue(s.votingEpoch, srv)
+	weeklySrv, err := s.getWeeklySharedRandomValue(s.votingEpoch, srv)
+	if err != nil {
+		panic(err)
+	}
 
 	// Build the Document.
 	doc := &s11n.Document{
