@@ -322,6 +322,7 @@ func (s *state) getDocument(descriptors []*descriptor, params *config.Parameters
 	}
 
 	weeklySrv := s.getWeeklySharedRandomValue(s.votingEpoch, srv)
+	s.log.Debug("Epoch %d, SRV %x, Weekly SRV %x", s.votingEpoch, srv, weeklySrv)
 
 	// Build the Document.
 	doc := &s11n.Document{
