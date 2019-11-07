@@ -261,36 +261,33 @@ func (s *state) voted(epoch uint64) bool {
 	return false
 }
 
-func (s *state) getWeeklySharedRandomValue(epoch uint64, srv []byte) ([]byte, error) {
+func (s *state) getWeeklySharedRandomValue(epoch uint64, srv []byte) []byte {
 	s.RLock()
 	defer s.RUnlock()
 	switch len(s.documents) {
 	case 0:
-		return srv, nil
+		return srv
 	default:
 		week := time.Duration(math.Abs(float64(time.Sunday-time.Now().Weekday()))) * 24 * time.Hour
-		history := time.Duration(len(s.documents)) * epochtime.Period
-		if history > week {
-			unixTime := time.Now().Add(-week).Unix()
-			firstWeeklyEpoch, _, _ := epochtime.FromUnix(unixTime)
-			doc, ok := s.documents[firstWeeklyEpoch]
+		unixTime := time.Now().Add(-week).Unix()
+		firstWeeklyEpoch, _, _ := epochtime.FromUnix(unixTime)
+
+		var oldestDoc *document = nil
+		for i := epoch - 1; i >= firstWeeklyEpoch; i-- {
+			doc, ok := s.documents[i]
 			if !ok {
-				return nil, errors.New("first weekly document not found")
+				continue
 			}
-			return doc.doc.SharedRandomValue, nil
-		} else {
-			unixTime := time.Now().Add(-history).Unix()
-			firstHistoryEpoch, _, _ := epochtime.FromUnix(unixTime)
-			doc, ok := s.documents[firstHistoryEpoch]
-			if !ok {
-				return nil, errors.New("first historical document not found")
-			}
-			return doc.doc.SharedRandomValue, nil
+			oldestDoc = doc
 		}
+		if oldestDoc == nil {
+			return srv
+		}
+		return oldestDoc.doc.SharedRandomValue
 	}
 
 	// not reached
-	return nil, errors.New("this error is not reached")
+	return nil
 }
 
 func (s *state) getDocument(descriptors []*descriptor, params *config.Parameters, srv []byte) *s11n.Document {
@@ -324,10 +321,7 @@ func (s *state) getDocument(descriptors []*descriptor, params *config.Parameters
 		topology = s.generateRandomTopology(nodes, srv)
 	}
 
-	weeklySrv, err := s.getWeeklySharedRandomValue(s.votingEpoch, srv)
-	if err != nil {
-		panic(err)
-	}
+	weeklySrv := s.getWeeklySharedRandomValue(s.votingEpoch, srv)
 
 	// Build the Document.
 	doc := &s11n.Document{
