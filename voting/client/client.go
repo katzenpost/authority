@@ -129,7 +129,9 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 
 	// try each Address until a connection is successful or fail
 	for i, idx := range idxs {
+		p.log.Debug("before dialFn")
 		conn, err = dialFn(ctx, "tcp", peer.Addresses[idx])
+		p.log.Debug("after dialFn")
 		if err == nil {
 			break
 		}
@@ -177,9 +179,11 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 	}()
 
 	// Handshake.
+	p.log.Debug("before Initialize")
 	if err = s.Initialize(conn); err != nil {
 		return nil, err
 	}
+	p.log.Debug("after Initialize")
 
 	isOk = true
 
