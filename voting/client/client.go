@@ -309,10 +309,12 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 
 	// Dispatch the get_consensus command.
 	cmd := &commands.GetConsensus{Epoch: epoch}
+	c.log.Debug("before randomPeerRoundTrip")
 	resp, err := c.pool.randomPeerRoundTrip(ctx, linkKey, cmd)
 	if err != nil {
 		return nil, nil, err
 	}
+	c.log.Debug("after randomPeerRoundTrip")
 
 	// Parse the consensus command.
 	r, ok := resp.(*commands.Consensus)
