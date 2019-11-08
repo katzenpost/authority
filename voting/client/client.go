@@ -181,6 +181,7 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 	// Handshake.
 	p.log.Debug("before Initialize")
 	if err = s.Initialize(conn); err != nil {
+		p.log.Debug("after Initialize failed")
 		return nil, err
 	}
 	p.log.Debug("after Initialize")
