@@ -226,6 +226,37 @@ func (s *state) generateDocument(epoch uint64) {
 	// For compatibility with shared s11n implementation between voting
 	// and non-voting authority, add SharedRandomValue.
 	srv := make([]byte, s11n.SharedRandomValueLength)
+
+	// generate the SharedRandomValue
+	rn := make([]byte, 32)
+	n, err := io.ReadFull(rand.Reader, rn)
+	if err != nil || n != 32 {
+		// XXX: if n != 32, err == nil
+		return nil, err
+	}
+
+	srv := make([]byte, s11n.SharedRandomLength)
+	reveal = make([]byte, s11n.SharedRandomLength)
+
+	binary.BigEndian.PutUint64(reveal, epoch)
+	h := sha3.Sum256(rn)
+	copy(reveal[8:], h[:])
+	srv := sha3.New256()
+	srv.Write([]byte("shared-random"))
+	srv.Write(epochToBytes(epoch))
+	srv.Write(s.s.IdentityKey())
+	srv.Write(reveal.Digest[:])
+
+	// include last srv as hash input
+	if s.genesisEpoch != epoch {
+		if d, ok := s.documents[epoch-1]; ok {
+			srv.Write(d.doc.SharedRandomValue)
+		} else {
+			s.log.Errorf("Epoch %d is not genesisEpoch %d but no prior document exists!?", epoch, s.genesisEpoch)
+			s.s.fatalErrCh <- err
+			return
+		}
+	}
 	doc.SharedRandomValue = srv
 
 	// if there are no prior SRV values, copy the current srv twice
