@@ -20,12 +20,13 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"golang.org/x/crypto/sha3"
 	"fmt"
 	"path/filepath"
 	"sync"
 	"time"
+	"io"
 
-	bolt "go.etcd.io/bbolt"
 	"github.com/katzenpost/authority/internal/s11n"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
@@ -33,6 +34,7 @@ import (
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/worker"
+	bolt "go.etcd.io/bbolt"
 	"gopkg.in/op/go-logging.v1"
 )
 
