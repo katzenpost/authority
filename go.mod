@@ -6,7 +6,8 @@ require (
 	github.com/BurntSushi/toml v0.3.1
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556
-	github.com/katzenpost/core v0.0.12
+	github.com/katzenpost/core v0.0.14-0.20210226013342-52e24c97d515
+	github.com/katzenpost/noise v0.0.2 // indirect
 	github.com/stretchr/testify v1.4.0
 	github.com/ugorji/go/codec v1.1.7
 	go.etcd.io/bbolt v1.3.4
